@@ -962,7 +962,7 @@ function broadcastNewCoupon(couponData) {
 
 function broadcastRestock(quantity) {
     const pricing = getPricing();
-    const pricingText = Object.keys(pricing).slice(0, 4).map(range => 
+    const pricingText = Object.keys(pricing).slice(0, 4).map(range =>
         `• ${range}: Rp ${formatIDR(pricing[range])}/account`
     ).join('\n');
     
@@ -981,6 +981,19 @@ function broadcastRestock(quantity) {
         `🧮 Use calculator to check pricing!\n\n` +
         `⚡ Order now before stock runs out: /start`;
     
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastUpdateNotice(title, body) {
+    const cleanBody = body && body.trim().length > 0
+        ? body.trim()
+        : 'Stay tuned for more updates and deals!';
+
+    const message =
+        `🆕 *${title}*\n\n` +
+        `${cleanBody}\n\n` +
+        `⚡ Order now before promos end: /start`;
+
     return broadcastToAll(message, { parse_mode: 'Markdown' });
 }
 
@@ -4117,11 +4130,11 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             }
             
             updatePricing(newPricing);
-            
-            const pricingText = Object.keys(newPricing).map(range => 
+
+            const pricingText = Object.keys(newPricing).map(range =>
                 `• ${range}: Rp ${formatIDR(newPricing[range])}`
             ).join('\n');
-            
+
             bot.sendMessage(chatId,
                 `✅ *PRICING UPDATED!*\n\n` +
                 `${pricingText}`,
