@@ -4141,21 +4141,6 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
 
-            broadcastUpdateNotice('PRICING UPDATE',
-                `${pricingText}\n\n💡 Bigger quantity = cheaper per account!`
-            ).then(result => {
-                if (bot && botReady) {
-                    bot.sendMessage(ADMIN_TELEGRAM_ID,
-                        `📢 *AUTO-BROADCAST COMPLETE*\n\n` +
-                        `📰 Update: Pricing\n` +
-                        `✅ Success: ${result.success}\n` +
-                        `❌ Failed: ${result.failed}\n` +
-                        `👥 Users reached: ${result.total}`,
-                        { parse_mode: 'Markdown' }
-                    ).catch(() => {});
-                }
-            }).catch(() => {});
-
             delete userStates[chatId];
         }
         else if (state.state === 'awaiting_bonus_input' && isAdmin(userId)) {
@@ -4199,27 +4184,10 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             newBonuses.sort((a, b) => a.min_quantity - b.min_quantity);
             saveBonuses(newBonuses);
 
-            const formattedBonuses = formatBonusDealsList();
-
             bot.sendMessage(chatId,
-                `✅ *Bonus deals updated!*\n\n${formattedBonuses}`,
+                `✅ *Bonus deals updated!*\n\n${formatBonusDealsList()}`,
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
-
-            broadcastUpdateNotice('BONUS DEALS UPDATE',
-                `🎁 New bonus lineup:\n${formattedBonuses}`
-            ).then(result => {
-                if (bot && botReady) {
-                    bot.sendMessage(ADMIN_TELEGRAM_ID,
-                        `📢 *AUTO-BROADCAST COMPLETE*\n\n` +
-                        `📰 Update: Bonus Deals\n` +
-                        `✅ Success: ${result.success}\n` +
-                        `❌ Failed: ${result.failed}\n` +
-                        `👥 Users reached: ${result.total}`,
-                        { parse_mode: 'Markdown' }
-                    ).catch(() => {});
-                }
-            }).catch(() => {});
 
             delete userStates[chatId];
         }
