@@ -41,6 +41,7 @@ const QRIS_FILE = 'qris_payment.json';
 const PENDING_PAYMENTS_FILE = 'pending_payments.json';
 const TOPUPS_FILE = 'topups.json';
 const GIFT_MESSAGES_FILE = 'gift_messages.json';
+const BONUSES_FILE = 'bonuses.json';
 
 // Default pricing
 const DEFAULT_PRICING = {
@@ -50,6 +51,8 @@ const DEFAULT_PRICING = {
     "500-999": 350,
     "1000+": 300
 };
+
+const DEFAULT_BONUSES = [];
 
 const DEFAULT_COUPONS = {
     "AAB": {
@@ -350,6 +353,85 @@ function getPricing() {
 
 function updatePricing(pricing) {
     saveJSON(PRICING_FILE, pricing);
+}
+
+function getBonuses() {
+    const bonuses = loadJSON(BONUSES_FILE, DEFAULT_BONUSES);
+    if (!Array.isArray(bonuses)) return [];
+
+    return bonuses
+        .map(bonus => {
+            const min = parseInt(bonus.min_quantity);
+            const bonusQty = parseInt(bonus.bonus_quantity);
+            if (isNaN(min) || min < 1 || isNaN(bonusQty) || bonusQty < 1) {
+                return null;
+            }
+            const description = bonus.description && String(bonus.description).trim().length > 0
+                ? String(bonus.description).trim()
+                : `Buy ${min}+ get ${bonusQty} free`;
+            return {
+                min_quantity: min,
+                bonus_quantity: bonusQty,
+                description
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.min_quantity - b.min_quantity);
+}
+
+function saveBonuses(bonuses) {
+    saveJSON(BONUSES_FILE, bonuses);
+}
+
+function getActiveBonus(quantity) {
+    if (!quantity || quantity < 1) return null;
+    const bonuses = getBonuses();
+    let active = null;
+
+    bonuses.forEach(bonus => {
+        if (quantity >= bonus.min_quantity) {
+            if (!active || bonus.min_quantity >= active.min_quantity) {
+                active = bonus;
+            }
+        }
+    });
+
+    return active;
+}
+
+function getBonusQuantity(quantity) {
+    const activeBonus = getActiveBonus(quantity);
+    return activeBonus ? activeBonus.bonus_quantity : 0;
+}
+
+function formatBonusDealsList() {
+    const bonuses = getBonuses();
+    if (bonuses.length === 0) {
+        return 'No bonus deals are active right now.';
+    }
+
+    return bonuses.map(bonus =>
+        `• Buy ${bonus.min_quantity}+ get ${bonus.bonus_quantity} free (${escapeMarkdown(bonus.description)})`
+    ).join('\n');
+}
+
+function getOrderTotalQuantity(order) {
+    if (!order) return 0;
+    if (typeof order.total_quantity === 'number') {
+        return order.total_quantity;
+    }
+    const baseQuantity = order.quantity || 0;
+    const bonusQuantity = order.bonus_quantity || 0;
+    return baseQuantity + bonusQuantity;
+}
+
+function formatOrderQuantitySummary(order) {
+    if (!order) return '0 links';
+    const total = getOrderTotalQuantity(order);
+    if (order.bonus_quantity && order.bonus_quantity > 0) {
+        return `${order.quantity} + ${order.bonus_quantity} bonus = ${total} links`;
+    }
+    return `${order.quantity} links`;
 }
 
 function getCoupons() {
@@ -726,17 +808,18 @@ function toggleGiftOneClaimPerUser(giftId) {
 // DELIVERY & BROADCAST FUNCTIONS
 // ============================================
 
-async function deliverlinks(userId, orderId, quantity) {
+async function deliverlinks(userId, orderId, quantity, bonusQuantity = 0) {
     try {
         // Validate inputs
+        const totalQuantity = quantity + (bonusQuantity || 0);
         if (!userId || !orderId || !quantity) {
             throw new Error('Missing required parameters');
         }
-        
-        if (quantity < 1) {
+
+        if (totalQuantity < 1) {
             throw new Error('Invalid quantity');
         }
-        
+
         const stock = getStock();
         
         // Validate stock
@@ -744,45 +827,49 @@ async function deliverlinks(userId, orderId, quantity) {
             throw new Error('Stock data is corrupted');
         }
         
-        if (stock.links.length < quantity) {
-            bot.sendMessage(ADMIN_TELEGRAM_ID, 
+        if (stock.links.length < totalQuantity) {
+            bot.sendMessage(ADMIN_TELEGRAM_ID,
                 `❌ *INSUFFICIENT STOCK!*\n\n` +
-                `Order #${orderId} needs ${quantity} links\n` +
+                `Order #${orderId} needs ${totalQuantity} links\n` +
                 `Available: ${stock.links.length}\n\n` +
                 `Please add more links!`,
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
             return false;
         }
-        
-        const linksToDeliver = stock.links.slice(0, quantity);
-        const remainingLinks = stock.links.slice(quantity);
-        
-        updateStock(stock.current_stock - quantity, remainingLinks);
-        
-        if (quantity <= ACCOUNT_MESSAGE_LIMIT) {
+
+        const linksToDeliver = stock.links.slice(0, totalQuantity);
+        const remainingLinks = stock.links.slice(totalQuantity);
+
+        updateStock(stock.current_stock - totalQuantity, remainingLinks);
+
+        const bonusInfo = bonusQuantity > 0
+            ? `🎁 Bonus: +${bonusQuantity} links\n📦 Total Delivered: ${totalQuantity} links`
+            : '';
+
+        if (totalQuantity <= ACCOUNT_MESSAGE_LIMIT) {
             await bot.sendMessage(userId,
                 `✅ *LINKS DELIVERED!*\n\n` +
                 `📋 Order #${orderId}\n` +
-                `📦 Quantity: ${quantity} Links\n\n` +
+                `📦 Quantity: ${quantity} Links${bonusInfo ? `\n${bonusInfo}\n` : '\n'}` +
                 `🎵 Here are your Spotify Links:\n` +
                 `👇 *Tap each link to copy:*`,
                 { parse_mode: 'Markdown' }
             );
-            
+
             for (let i = 0; i < linksToDeliver.length; i++) {
-                await bot.sendMessage(userId, 
+                await bot.sendMessage(userId,
                     `\`${linksToDeliver[i]}\`\n\n` +
-                    `📌 Account ${i + 1} of ${quantity}\n` +
+                    `📌 Account ${i + 1} of ${totalQuantity}\n` +
                     `👆 Tap link above to copy`,
                     { parse_mode: 'Markdown' }
                 );
-                
+
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
-            
+
             await bot.sendMessage(userId,
-                `🎉 *ALL ${quantity} Links DELIVERED!*\n\n` +
+                `🎉 *ALL ${totalQuantity} Links DELIVERED!*\n\n` +
                 `✅ Complete\n` +
                 `📱 Contact ${ADMIN_USERNAME} for support\n\n` +
                 `Thank you! 🙏`,
@@ -807,11 +894,15 @@ async function deliverlinks(userId, orderId, quantity) {
                 fs.writeFileSync(filePath, fileContent, 'utf8');
                 fileCreated = true;
                 
+                const documentQuantityText = bonusQuantity > 0
+                    ? `📦 ${quantity} paid + ${bonusQuantity} bonus (${totalQuantity} total) links\n\n`
+                    : `📦 ${quantity} Spotify Premium Student links\n\n`;
+
                 await bot.sendDocument(userId, filePath, {
-                    caption: 
+                    caption:
                         `✅ *LINKS DELIVERED!*\n\n` +
                         `📋 Order #${orderId}\n` +
-                        `📦 ${quantity} Spotify Premium Student links\n\n` +
+                        documentQuantityText +
                         `📄 All links in this file\n` +
                         `👆 *Open file and tap any link to copy*\n\n` +
                         `📱 Support: ${ADMIN_USERNAME}\n` +
@@ -903,22 +994,28 @@ function createOrder(chatId, userId, user, quantity, coupon) {
         let totalPrice = originalPrice;
         let discountPercent = 0;
         let couponCode = null;
-        
+        const activeBonus = getActiveBonus(quantity);
+        const bonusQuantity = activeBonus ? activeBonus.bonus_quantity : 0;
+        const totalQuantity = quantity + bonusQuantity;
+
         if (coupon) {
             discountPercent = coupon.discount_percent;
             totalPrice = Math.floor(originalPrice * (1 - discountPercent / 100));
             couponCode = coupon.code;
             applyCoupon(couponCode, userId);
         }
-        
+
         const orderId = getNextOrderId();
         const users = getUsers();
-        
+
         const order = {
             order_id: orderId,
             user_id: userId,
             username: users[userId]?.username || user.username || 'unknown',
             quantity: quantity,
+            bonus_quantity: bonusQuantity,
+            total_quantity: totalQuantity,
+            bonus_description: activeBonus ? activeBonus.description : null,
             original_price: originalPrice,
             total_price: totalPrice,
             discount_percent: discountPercent,
@@ -945,6 +1042,7 @@ function createOrder(chatId, userId, user, quantity, coupon) {
         let orderMessage = `✅ *ORDER CREATED!*\n\n` +
             `📋 Order ID: *#${orderId}*\n` +
             `📦 Quantity: ${quantity} links\n` +
+            `${activeBonus ? `🎁 Bonus: +${bonusQuantity} links (${escapeMarkdown(activeBonus.description)})\n📦 Total Delivered: ${totalQuantity} links\n` : ''}` +
             `💵 Price per account: Rp ${formatIDR(getPricePerUnit(quantity))}\n`;
         
         if (coupon) {
@@ -1005,7 +1103,7 @@ function createOrder(chatId, userId, user, quantity, coupon) {
             `Order ID: #${orderId}\n` +
             `Customer: @${escapeMarkdown(users[userId]?.username || 'unknown')}\n` +
             `User ID: ${userId}\n` +
-            `Quantity: ${quantity} links\n`;
+            `Quantity: ${quantity} links${activeBonus ? ` (+${bonusQuantity} bonus = ${totalQuantity})` : ''}\n`;
         
         if (coupon) {
             adminMessage += `\n🎟️ Coupon: ${couponCode} (-${discountPercent}%)\n` +
@@ -1031,7 +1129,10 @@ function processBalanceOrder(chatId, userId, user, quantity, coupon) {
         let totalPrice = originalPrice;
         let discountPercent = 0;
         let couponCode = null;
-        
+        const activeBonus = getActiveBonus(quantity);
+        const bonusQuantity = activeBonus ? activeBonus.bonus_quantity : 0;
+        const totalQuantity = quantity + bonusQuantity;
+
         if (coupon) {
             discountPercent = coupon.discount_percent;
             totalPrice = Math.floor(originalPrice * (1 - discountPercent / 100));
@@ -1061,6 +1162,9 @@ function processBalanceOrder(chatId, userId, user, quantity, coupon) {
             user_id: userId,
             username: users[userId]?.username || user.username || 'unknown',
             quantity: quantity,
+            bonus_quantity: bonusQuantity,
+            total_quantity: totalQuantity,
+            bonus_description: activeBonus ? activeBonus.description : null,
             original_price: originalPrice,
             total_price: totalPrice,
             discount_percent: discountPercent,
@@ -1092,6 +1196,7 @@ function processBalanceOrder(chatId, userId, user, quantity, coupon) {
         let orderMessage = `✅ *ORDER COMPLETED INSTANTLY!*\n\n` +
             `📋 Order ID: *#${orderId}*\n` +
             `📦 Quantity: ${quantity} links\n` +
+            `${activeBonus ? `🎁 Bonus: +${bonusQuantity} links (${escapeMarkdown(activeBonus.description)})\n📦 Total Delivered: ${totalQuantity} links\n` : ''}` +
             `💵 Price per account: Rp ${formatIDR(getPricePerUnit(quantity))}\n`;
         
         if (coupon) {
@@ -1106,21 +1211,21 @@ function processBalanceOrder(chatId, userId, user, quantity, coupon) {
         
         orderMessage += `\n💳 Balance Deducted: Rp ${formatIDR(totalPrice)}\n` +
             `💰 New Balance: Rp ${formatIDR(newBalance)}\n\n` +
-            `🎵 Delivering your ${quantity} links now...\n\n` +
+            `🎵 Delivering your ${totalQuantity} links now...\n\n` +
             `Please wait...`;
         
-        bot.sendMessage(chatId, orderMessage, { 
-            parse_mode: 'Markdown', 
-            reply_markup: keyboard 
+        bot.sendMessage(chatId, orderMessage, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
         }).then(() => {
-            deliverlinks(userId, orderId, quantity);
+            deliverlinks(userId, orderId, quantity, bonusQuantity);
         }).catch(() => {});
         
         let adminMessage = `✅ *INSTANT BALANCE ORDER*\n\n` +
             `Order ID: #${orderId}\n` +
             `Customer: @${escapeMarkdown(users[userId]?.username || 'unknown')}\n` +
             `User ID: ${userId}\n` +
-            `Quantity: ${quantity} links\n`;
+            `Quantity: ${quantity} links${activeBonus ? ` (+${bonusQuantity} bonus = ${totalQuantity})` : ''}\n`;
         
         if (coupon) {
             adminMessage += `\n🎟️ Coupon: ${couponCode} (-${discountPercent}%)\n` +
@@ -1688,7 +1793,7 @@ bot.on('photo', async (msg) => {
                 `📋 Order ID: #${orderId}\n` +
                 `👤 Customer: @${escapeMarkdown(username)}\n` +
                 `🆔 User ID: ${userId}\n\n` +
-                `📦 Quantity: ${order.quantity} links\n` +
+                `📦 Quantity: ${formatOrderQuantitySummary(order)}\n` +
                 `💰 Total: Rp ${formatIDR(order.total_price)}\n` +
                 `💵 Price/Unit: Rp ${formatIDR(getPricePerUnit(order.quantity))}\n` +
                 `${order.coupon_code ? `🎟️ Coupon: ${order.coupon_code} (-${order.discount_percent}%)\n` : ''}` +
@@ -1932,18 +2037,21 @@ bot.on('callback_query', async (query) => {
                 return;
             }
             
+            const deliveryQuantity = getOrderTotalQuantity(order);
+            const bonusNote = order.bonus_quantity ? ` (includes +${order.bonus_quantity} bonus)` : '';
+
             bot.editMessageCaption(
                 `⏳ *PROCESSING PAYMENT...*\n\n` +
                 `Order #${orderId}\n` +
-                `Delivering ${order.quantity} links...`,
-                { 
-                    chat_id: chatId, 
+                `Delivering ${deliveryQuantity} links${bonusNote}...`,
+                {
+                    chat_id: chatId,
                     message_id: messageId,
                     parse_mode: 'Markdown'
                 }
             ).catch(() => {});
             
-            const delivered = await deliverlinks(order.user_id, orderId, order.quantity);
+            const delivered = await deliverlinks(order.user_id, orderId, order.quantity, order.bonus_quantity || 0);
             
             if (delivered) {
                 updateOrder(orderId, {
@@ -1964,7 +2072,7 @@ bot.on('callback_query', async (query) => {
                     `✅ *VERIFIED & DELIVERED!*\n\n` +
                     `📋 Order #${orderId}\n` +
                     `👤 @${escapeMarkdown(order.username)}\n` +
-                    `📦 ${order.quantity} links\n` +
+                    `📦 ${formatOrderQuantitySummary(order)}\n` +
                     `💰 Rp ${formatIDR(order.total_price)}\n\n` +
                     `✅ links sent!\n` +
                     `⏰ ${getCurrentDateTime()}`,
@@ -1978,7 +2086,7 @@ bot.on('callback_query', async (query) => {
                 bot.editMessageCaption(
                     `❌ *INSUFFICIENT STOCK!*\n\n` +
                     `Order #${orderId}\n` +
-                    `Need: ${order.quantity}\n` +
+                    `Need: ${deliveryQuantity}\n` +
                     `Available: ${getStock().links.length}\n\n` +
                     `Add more links!`,
                     { 
@@ -2608,14 +2716,50 @@ else if (data.startsWith('claim_gift_')) {
         
         else if (data === 'edit_pricing') {
             if (!isAdmin(userId)) return;
-            
+
             userStates[chatId] = { state: 'awaiting_new_pricing' };
-            
+
             bot.editMessageText(
                 `✏️ *EDIT PRICING*\n\n` +
                 `Send new pricing in this format:\n\n` +
                 `1-99=500 100-199=450 200+=400\n\n` +
                 `💡 Separate each range with space`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+        else if (data === 'admin_bonuses') {
+            if (!isAdmin(userId)) return;
+
+            const bonuses = getBonuses();
+            const bonusText = bonuses.length > 0
+                ? formatBonusDealsList()
+                : 'No bonus deals are active right now.';
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '✏️ Edit Bonus Deals', callback_data: 'edit_bonuses' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🎁 *BONUS DEAL MANAGEMENT*\n\n` +
+                `${bonusText}\n\n` +
+                `Bonuses give extra free links automatically when users hit the minimum quantity.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+        else if (data === 'edit_bonuses') {
+            if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_bonus_input' };
+
+            bot.editMessageText(
+                `✏️ *EDIT BONUS DEALS*\n\n` +
+                `Send each deal on a new line in this format:\n` +
+                `MIN=BONUS|Description (optional)\n\n` +
+                `Example:\n100=10|Buy 100 get 10 free\n250=35\n\n` +
+                `Send 0 to disable all bonus deals.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
             ).catch(() => {});
         }
@@ -2783,18 +2927,23 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '💰 By Budget', callback_data: 'calc_budget' }],
                     [{ text: '📦 By Quantity', callback_data: 'calc_quantity' }],
                     [{ text: '💵 View Pricing', callback_data: 'calc_view_pricing' }],
+                    [{ text: '🎁 Bonus Deals', callback_data: 'view_bonus_deals' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
-            
+
             const pricing = getPricing();
-            const pricingText = Object.keys(pricing).map(range => 
+            const pricingText = Object.keys(pricing).map(range =>
                 `• ${range}: Rp ${formatIDR(pricing[range])}/acc`
             ).join('\n');
-            
+            const bonuses = getBonuses();
+            const bonusText = bonuses.length > 0
+                ? `\n\n🎁 Bonus Deals apply automatically!`
+                : '';
+
             bot.editMessageText(
                 `🧮 *SMART CALCULATOR*\n\n` +
-                `💰 Pricing:\n${pricingText}\n\n` +
+                `💰 Pricing:\n${pricingText}${bonusText}\n\n` +
                 `What to calculate?`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
@@ -2841,7 +2990,11 @@ else if (data.startsWith('claim_gift_')) {
                 return `📌 *${range} links*\n` +
                        `   Price: Rp ${formatIDR(price)}/account${examples}`;
             }).join('\n\n');
-            
+            const bonuses = getBonuses();
+            const bonusText = bonuses.length > 0
+                ? `\n\n🎁 *Bonus Deals:*\n${formatBonusDealsList()}`
+                : '';
+
             const keyboard = {
                 inline_keyboard: [
                     [{ text: '🧮 Calculate', callback_data: 'open_calculator' }],
@@ -2849,12 +3002,33 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
-            
+
             bot.editMessageText(
                 `💵 *COMPLETE PRICING TABLE*\n\n` +
-                `${pricingDetails}\n\n` +
+                `${pricingDetails}${bonusText}\n\n` +
                 `💡 Bulk orders get better pricing!\n` +
                 `🎟️ Use coupon codes for extra discounts!`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+        else if (data === 'view_bonus_deals') {
+            const bonuses = getBonuses();
+            const bonusText = bonuses.length > 0
+                ? formatBonusDealsList()
+                : 'No bonus deals are active right now.';
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '🛒 Order Now', callback_data: 'order' }],
+                    [{ text: '🧮 Calculator', callback_data: 'open_calculator' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🎁 *BONUS DEALS*\n\n` +
+                `${bonusText}\n\n` +
+                `Bonuses apply automatically when you reach the minimum quantity!`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -2863,23 +3037,29 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'order') {
             const pricing = getPricing();
             const stock = getStock();
-            
+            const bonuses = getBonuses();
+
             const keyboard = {
                 inline_keyboard: [
                     [{ text: '✅ Order Now', callback_data: 'confirm_order' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
-            
-            const pricingText = Object.keys(pricing).map(range => 
+
+            const pricingText = Object.keys(pricing).map(range =>
                 `• ${range}: Rp ${formatIDR(pricing[range])}`
             ).join('\n');
-            
+
+            const bonusText = bonuses.length > 0
+                ? `\n🎁 *Bonus Deals:*\n${formatBonusDealsList()}\n`
+                : '';
+
             bot.editMessageText(
                 `🎵 *SPOTIFY PREMIUM STUDENT*\n\n` +
                 `📦 Stock: ${stock.current_stock} links\n\n` +
                 `💰 Pricing:\n` +
                 `${pricingText}\n\n` +
+                `${bonusText}` +
                 `🎟️ Use coupon codes for discounts!\n` +
                 `📱 Admin: ${ADMIN_USERNAME}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
@@ -3055,7 +3235,7 @@ else if (data.startsWith('claim_gift_')) {
                              order.status === 'awaiting_payment' ? '⏳' : 
                              order.status === 'expired' ? '⏰' : '❌';
                 text += `${emoji} Order #${order.order_id}\n`;
-                text += `   Qty: ${order.quantity} links\n`;
+                text += `   Qty: ${formatOrderQuantitySummary(order)}\n`;
                 text += `   Total: Rp ${formatIDR(order.total_price)}\n`;
                 if (order.coupon_code) {
                     text += `   Coupon: ${order.coupon_code}\n`;
@@ -3164,19 +3344,23 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
                     [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                     [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
+                    [{ text: '🎁 Bonus Deals', callback_data: 'view_bonus_deals' }],
                     [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
                     [{ text: '📦 Stock', callback_data: 'check_stock' }],
                     [{ text: '📝 My Orders', callback_data: 'my_orders' }],
                     [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }]
                 ]
             };
-            
+
+            const bonuses = getBonuses();
+            const bonusText = bonuses.length > 0 ? `\n\n🎁 *Bonus Deals:*\n${formatBonusDealsList()}` : '';
+
             bot.editMessageText(
                 `🎉 *Welcome Back!*\n\n` +
                 `Hi ${escapeMarkdown(query.from.first_name)}! 👋\n\n` +
                 `💳 Balance: Rp ${formatIDR(balance)}\n` +
                 `📦 Stock: ${stock.current_stock} links\n\n` +
-                `💰 Prices:\n${pricingText}`,
+                `💰 Prices:\n${pricingText}${bonusText}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -3190,6 +3374,7 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '👥 Users', callback_data: 'admin_users' }, { text: '💰 Revenue', callback_data: 'admin_revenue' }],
                     [{ text: '📈 Analytics', callback_data: 'admin_analytics' }, { text: '📦 Stock', callback_data: 'admin_stock' }],
                     [{ text: '💵 Pricing', callback_data: 'admin_pricing' }, { text: '🎟️ Coupons', callback_data: 'admin_coupons' }],
+                    [{ text: '🎁 Bonuses', callback_data: 'admin_bonuses' }],
                     [{ text: '📱 GoPay', callback_data: 'admin_qris' }, { text: '🛒 Custom Order', callback_data: 'admin_custom_order' }],
                     [{ text: '📋 Pending Top-ups', callback_data: 'admin_pending_topups' }, { text: '💰 Add Balance', callback_data: 'admin_add_balance' }],
                     [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }],
@@ -3274,7 +3459,7 @@ else if (data.startsWith('claim_gift_')) {
                              order.status === 'expired' ? '⏰' : '❌';
                 
                 text += `${emoji} #${order.order_id} - @${escapeMarkdown(order.username)}\n`;
-                text += `   Qty: ${order.quantity} | Rp ${formatIDR(order.total_price)}\n`;
+                text += `   Qty: ${formatOrderQuantitySummary(order)} | Rp ${formatIDR(order.total_price)}\n`;
                 if (order.coupon_code) {
                     text += `   Coupon: ${order.coupon_code} (-${order.discount_percent}%)\n`;
                 }
@@ -3298,7 +3483,7 @@ else if (data.startsWith('claim_gift_')) {
             const approvedTopups = topups.filter(t => t.status === 'approved');
             
             const totalRevenue = completed.reduce((sum, o) => sum + o.total_price, 0);
-            const totallinks = completed.reduce((sum, o) => sum + o.quantity, 0);
+            const totallinks = completed.reduce((sum, o) => sum + getOrderTotalQuantity(o), 0);
             const autoRevenue = completed.filter(o => o.payment_method === 'balance').reduce((sum, o) => sum + o.total_price, 0);
             const manualRevenue = completed.filter(o => o.payment_method === 'manual').reduce((sum, o) => sum + o.total_price, 0);
             
@@ -3842,7 +4027,12 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                         [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
                     ]
                 };
-                
+                const bonusQuantity = getBonusQuantity(result.quantity);
+                const totalQuantity = result.quantity + bonusQuantity;
+                const bonusText = bonusQuantity > 0
+                    ? `🎁 Bonus: +${bonusQuantity} links (Total delivered: ${totalQuantity})\n\n`
+                    : '';
+
                 bot.sendMessage(chatId,
                     `💰 *BUDGET CALCULATION*\n\n` +
                     `Your Budget: Rp ${formatIDR(budget)}\n\n` +
@@ -3850,6 +4040,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                     `💵 Price per account: Rp ${formatIDR(result.pricePerUnit)}\n` +
                     `💳 Total cost: Rp ${formatIDR(result.price)}\n` +
                     `💰 Change: Rp ${formatIDR(budget - result.price)}\n\n` +
+                    bonusText +
                     `🎟️ Use coupon codes for extra discounts!`,
                     { parse_mode: 'Markdown', reply_markup: keyboard }
                 ).catch(() => {});
@@ -3873,7 +4064,9 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const pricing = getPricing();
             const firstRangePrice = pricing[Object.keys(pricing)[0]];
             const savings = (firstRangePrice - pricePerUnit) * quantity;
-            
+            const bonusQuantity = getBonusQuantity(quantity);
+            const totalQuantity = quantity + bonusQuantity;
+
             const keyboard = {
                 inline_keyboard: [
                     [{ text: `🛒 Order ${quantity} links`, callback_data: 'order' }],
@@ -3886,13 +4079,16 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             if (savings > 0) {
                 savingsText = `\n💸 You save: Rp ${formatIDR(savings)} vs regular price!\n`;
             }
-            
+            const bonusText = bonusQuantity > 0
+                ? `\n🎁 Bonus: +${bonusQuantity} links (Total delivered: ${totalQuantity})\n`
+                : '';
+
             bot.sendMessage(chatId,
                 `📦 *QUANTITY CALCULATION*\n\n` +
                 `Quantity: *${quantity} links*\n\n` +
                 `💵 Price per account: Rp ${formatIDR(pricePerUnit)}\n` +
                 `💰 Total price: *Rp ${formatIDR(totalPrice)}*\n` +
-                `${savingsText}\n` +
+                `${savingsText}${bonusText}\n` +
                 `🎟️ Use coupon codes for extra discounts!`,
                 { parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
@@ -3904,7 +4100,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
         else if (state.state === 'awaiting_new_pricing' && isAdmin(userId)) {
             const parts = text.trim().split(/\s+/);
             const newPricing = {};
-            
+
             let valid = true;
             parts.forEach(part => {
                 const match = part.match(/^(.+)=(\d+)$/);
@@ -3931,7 +4127,55 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 `${pricingText}`,
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
-            
+
+            delete userStates[chatId];
+        }
+        else if (state.state === 'awaiting_bonus_input' && isAdmin(userId)) {
+            const raw = text.trim();
+            if (raw === '0') {
+                saveBonuses([]);
+                bot.sendMessage(chatId, '✅ All bonus deals disabled!').catch(() => {});
+                delete userStates[chatId];
+                return;
+            }
+
+            const lines = raw.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+            if (lines.length === 0) {
+                bot.sendMessage(chatId, '❌ Please send at least one bonus rule or 0 to clear.').catch(() => {});
+                return;
+            }
+
+            const newBonuses = [];
+            for (const line of lines) {
+                const [configPart, descriptionPart] = line.split('|').map(part => part.trim());
+                const match = configPart.match(/^(\d+)\s*(?:[:=x])\s*(\d+)$/i);
+                if (!match) {
+                    bot.sendMessage(chatId, `❌ Invalid format: "${configPart}"\nUse MIN=BONUS`).catch(() => {});
+                    return;
+                }
+                const min = parseInt(match[1]);
+                const bonusQty = parseInt(match[2]);
+                if (min < 1 || bonusQty < 1) {
+                    bot.sendMessage(chatId, '❌ Min and bonus must be at least 1!').catch(() => {});
+                    return;
+                }
+                newBonuses.push({
+                    min_quantity: min,
+                    bonus_quantity: bonusQty,
+                    description: descriptionPart && descriptionPart.length > 0
+                        ? descriptionPart
+                        : `Buy ${min}+ get ${bonusQty} free`
+                });
+            }
+
+            newBonuses.sort((a, b) => a.min_quantity - b.min_quantity);
+            saveBonuses(newBonuses);
+
+            bot.sendMessage(chatId,
+                `✅ *Bonus deals updated!*\n\n${formatBonusDealsList()}`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+
             delete userStates[chatId];
         }
         
@@ -3955,22 +4199,24 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
         else if (state.state === 'awaiting_order_quantity') {
             const quantity = parseInt(text);
             const stock = getStock();
-            
+            const bonusQuantity = getBonusQuantity(quantity);
+            const totalRequired = quantity + bonusQuantity;
+
             if (isNaN(quantity) || quantity < 1) {
                 bot.sendMessage(chatId, '❌ Please send a valid number!').catch(() => {});
                 return;
             }
-            
-            if (quantity > stock.current_stock) {
-                bot.sendMessage(chatId, `❌ Only ${stock.current_stock} links available!`).catch(() => {});
+
+            if (totalRequired > stock.current_stock) {
+                bot.sendMessage(chatId, `❌ Need ${totalRequired} links but only ${stock.current_stock} available!`).catch(() => {});
                 return;
             }
-            
-            if (quantity > stock.links.length) {
-                bot.sendMessage(chatId, `❌ Actual stock: ${stock.links.length} links available!`).catch(() => {});
+
+            if (totalRequired > stock.links.length) {
+                bot.sendMessage(chatId, `❌ Need ${totalRequired} links but actual stock is ${stock.links.length}!`).catch(() => {});
                 return;
             }
-            
+
             if (quantity > MAX_ORDER_QUANTITY) {
                 bot.sendMessage(chatId, `❌ Maximum order: ${MAX_ORDER_QUANTITY} links!`).catch(() => {});
                 return;
@@ -3989,9 +4235,10 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                     [{ text: '⏭️ Skip (No Coupon)', callback_data: 'skip_coupon' }]
                 ]
             };
-            
+
             bot.sendMessage(chatId,
-                `✅ Quantity: ${quantity} links\n\n` +
+                `✅ Quantity: ${quantity} links${bonusQuantity > 0 ? ` (+${bonusQuantity} bonus = ${totalRequired})` : ''}\n` +
+                `${bonusQuantity > 0 ? `🎁 Bonus applied automatically!\n\n` : '\n'}` +
                 `🎟️ Do you have a coupon code?\n\n` +
                 `💡 Enter coupon code now to get instant discount!\n` +
                 `Or click Skip to continue without coupon.`,
@@ -4051,7 +4298,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 `Please wait...`,
                 { parse_mode: 'Markdown' }
             ).then(() => {
-                deliverlinks(userId, orderId, quantity).then(success => {
+                deliverlinks(userId, orderId, quantity, 0).then(success => {
                     if (success) {
                         bot.sendMessage(chatId,
                             `✅ *DELIVERY COMPLETE*\n\n` +
@@ -4103,14 +4350,17 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const balance = getBalance(userId);
             const stock = getStock();
             const originalPrice = calculatePrice(quantity);
-            
+            const bonusQuantity = getBonusQuantity(quantity);
+            const totalRequired = quantity + bonusQuantity;
+
             if (isNaN(quantity) || quantity < 1) {
                 bot.sendMessage(chatId, '❌ Please send a valid number!').catch(() => {});
                 return;
             }
-            
-            if (quantity > stock.current_stock || quantity > stock.links.length) {
-                bot.sendMessage(chatId, `❌ Only ${Math.min(stock.current_stock, stock.links.length)} links available!`).catch(() => {});
+
+            if (totalRequired > stock.current_stock || totalRequired > stock.links.length) {
+                const available = Math.min(stock.current_stock, stock.links.length);
+                bot.sendMessage(chatId, `❌ Need ${totalRequired} links but only ${available} available!`).catch(() => {});
                 return;
             }
             
@@ -4165,7 +4415,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 };
                 
                 bot.sendMessage(chatId,
-                    `✅ Quantity: ${quantity} links\n` +
+                    `✅ Quantity: ${quantity} links${bonusQuantity > 0 ? ` (+${bonusQuantity} bonus = ${totalRequired})` : ''}\n` +
                     `💰 Price: Rp ${formatIDR(originalPrice)}\n\n` +
                     `🎟️ You can use a coupon code!\n\n` +
                     `💡 Enter coupon code to get discount\n` +
@@ -4250,27 +4500,33 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             }
             else if (state.step === 'price') {
                 const customPrice = parseInt(text.replace(/\D/g, ''));
-                
+
                 if (isNaN(customPrice) || customPrice < 0) {
                     bot.sendMessage(chatId, '❌ Invalid price!').catch(() => {});
                     return;
                 }
-                
+
                 const orderId = getNextOrderId();
                 const users = getUsers();
                 const targetUser = users[state.target_user_id];
-                
+                const activeBonus = getActiveBonus(state.quantity);
+                const bonusQuantity = activeBonus ? activeBonus.bonus_quantity : 0;
+                const totalQuantity = state.quantity + bonusQuantity;
+
                 if (!targetUser) {
                     bot.sendMessage(chatId, '❌ User not found in database!').catch(() => {});
                     delete userStates[chatId];
                     return;
                 }
-                
+
                 const order = {
                     order_id: orderId,
                     user_id: state.target_user_id,
                     username: targetUser.username,
                     quantity: state.quantity,
+                    bonus_quantity: bonusQuantity,
+                    total_quantity: totalQuantity,
+                    bonus_description: activeBonus ? activeBonus.description : null,
                     original_price: customPrice,
                     total_price: customPrice,
                     discount_percent: 0,
@@ -4292,15 +4548,15 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 }
                 
                 delete userStates[chatId];
-                
-                const delivered = await deliverlinks(state.target_user_id, orderId, state.quantity);
-                
+
+                const delivered = await deliverlinks(state.target_user_id, orderId, state.quantity, bonusQuantity);
+
                 if (delivered) {
                     bot.sendMessage(chatId,
                         `✅ *CUSTOM ORDER CREATED & DELIVERED!*\n\n` +
                         `📋 Order ID: #${orderId}\n` +
                         `👤 User: @${escapeMarkdown(targetUser.username)}\n` +
-                        `📦 Quantity: ${state.quantity}\n` +
+                        `📦 Quantity: ${state.quantity}${bonusQuantity > 0 ? ` (+${bonusQuantity} bonus = ${totalQuantity})` : ''}\n` +
                         `💰 Price: Rp ${formatIDR(customPrice)}\n\n` +
                         `✅ links sent successfully!`,
                         { parse_mode: 'Markdown' }
