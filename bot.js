@@ -43,6 +43,7 @@ const TOPUPS_FILE = 'topups.json';
 const GIFT_MESSAGES_FILE = 'gift_messages.json';
 const BONUSES_FILE = 'bonuses.json';
 const ACCOUNTS_FILE = 'accounts.json';
+const CUSTOM_CONTENT_FILE = 'custom_content.json';
 
 // Default pricing
 const DEFAULT_PRICING = {
@@ -215,6 +216,73 @@ function updateStock(quantity, links = null) {
             }).catch(() => {});
         }, 2000);
     }
+}
+
+function normalizeCustomContent(content = {}) {
+    const products = Array.isArray(content.products) ? content.products : [];
+    const buttons = Array.isArray(content.buttons) ? content.buttons : [];
+
+    let changed = false;
+
+    const normalizedButtons = buttons
+        .filter(btn => btn && btn.label && btn.url)
+        .map((btn, index) => {
+            if (!btn.id) {
+                changed = true;
+            }
+            return {
+                id: btn.id || `${Date.now()}_${index}`,
+                label: btn.label,
+                url: btn.url
+            };
+        });
+
+    return {
+        data: { products, buttons: normalizedButtons },
+        changed
+    };
+}
+
+function getCustomContent() {
+    const content = loadJSON(CUSTOM_CONTENT_FILE, { products: [], buttons: [] });
+    const { data, changed } = normalizeCustomContent(content);
+    if (changed) {
+        saveJSON(CUSTOM_CONTENT_FILE, data);
+    }
+    return data;
+}
+
+function saveCustomContent(content) {
+    const { data } = normalizeCustomContent(content);
+    saveJSON(CUSTOM_CONTENT_FILE, data);
+}
+
+function chunkCustomButtons(buttons = []) {
+    if (!Array.isArray(buttons) || buttons.length === 0) return [];
+    return buttons
+        .filter(btn => btn && btn.label && btn.url)
+        .map(btn => [{ text: btn.label, url: btn.url }]);
+}
+
+function buildCustomButtonsManager(content = {}) {
+    const buttons = Array.isArray(content.buttons) ? content.buttons : [];
+    const keyboard = { inline_keyboard: [] };
+
+    if (buttons.length > 0) {
+        buttons.forEach(btn => {
+            const preview = btn.label.length > 40 ? `${btn.label.slice(0, 37)}...` : btn.label;
+            keyboard.inline_keyboard.push([
+                { text: `🗑️ ${preview}`, callback_data: `remove_custom_button:${btn.id}` }
+            ]);
+        });
+    }
+
+    keyboard.inline_keyboard.push(
+        [{ text: '➕ Add Custom Button', callback_data: 'admin_add_custom_button' }],
+        [{ text: '🔙 Back', callback_data: 'admin_custom_content' }]
+    );
+
+    return keyboard;
 }
 
 function getOrders() {
@@ -2984,6 +3052,7 @@ else if (data.startsWith('claim_gift_')) {
                         { text: '➕ Add Product', callback_data: 'admin_add_custom_product' },
                         { text: '🔗 Add Custom Button', callback_data: 'admin_add_custom_button' }
                     ],
+                    [{ text: '🗑️ Manage Buttons', callback_data: 'admin_manage_custom_buttons' }],
                     [{ text: '👀 Preview User View', callback_data: 'custom_products' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
                 ]
@@ -2994,6 +3063,19 @@ else if (data.startsWith('claim_gift_')) {
                 `• Products: ${productsCount}\n` +
                 `• Extra buttons: ${buttonsCount}\n\n` +
                 `Use the options below to add new entries or preview how users see them.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+        else if (data === 'admin_manage_custom_buttons') {
+            if (!isAdmin(userId)) return;
+
+            const customContent = getCustomContent();
+            const hasButtons = (customContent.buttons || []).length > 0;
+            const keyboard = buildCustomButtonsManager(customContent);
+
+            bot.editMessageText(
+                `🗑️ *MANAGE CUSTOM BUTTONS*\n\n` +
+                `${hasButtons ? 'Tap a button to remove it.' : 'No custom buttons yet.'}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -3022,6 +3104,33 @@ else if (data.startsWith('claim_gift_')) {
                 `Send in this format:\n` +
                 `Button text | https://link`,
                 { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+        else if (data.startsWith('remove_custom_button:')) {
+            if (!isAdmin(userId)) return;
+
+            const buttonId = data.replace('remove_custom_button:', '');
+            const content = getCustomContent();
+            const beforeCount = (content.buttons || []).length;
+            content.buttons = (content.buttons || []).filter(btn => `${btn.id}` !== buttonId);
+
+            if (beforeCount === content.buttons.length) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ Button not found',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            saveCustomContent(content);
+
+            const keyboard = buildCustomButtonsManager(content);
+            const hasButtons = content.buttons.length > 0;
+
+            bot.editMessageText(
+                `🗑️ *MANAGE CUSTOM BUTTONS*\n\n` +
+                `${hasButtons ? '✅ Button removed. Tap another to delete.' : '✅ Button removed. No custom buttons left.'}`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
         
@@ -4563,7 +4672,10 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             }
 
             const content = getCustomContent();
-            content.buttons = [...(content.buttons || []), { label, url }];
+            content.buttons = [
+                ...(content.buttons || []),
+                { id: `${Date.now()}_${Math.floor(Math.random() * 1000)}`, label, url }
+            ];
             saveCustomContent(content);
 
             bot.sendMessage(chatId,
