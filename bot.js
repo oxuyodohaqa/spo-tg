@@ -3534,11 +3534,11 @@ else if (data.startsWith('claim_gift_')) {
             const balance = getBalance(userId);
             const stock = getStock();
             const pricing = getPricing();
-            const firstPrice = pricing[Object.keys(pricing)[0]];
-            const canBuy = balance >= firstPrice && stock.links.length > 0;
+            const firstPrice = pricing[Object.keys(pricing)[0]] || 0;
+            const canBuyWithBalance = balance >= firstPrice && stock.links.length > 0;
             
             const keyboard = {
-                inline_keyboard: canBuy ? [
+                inline_keyboard: canBuyWithBalance ? [
                     [{ text: '✅ Buy Now', callback_data: 'confirm_balance_order' }],
                     [{ text: '💵 Top Up', callback_data: 'topup_balance' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
@@ -3554,8 +3554,8 @@ else if (data.startsWith('claim_gift_')) {
                 `Your Balance: Rp ${formatIDR(balance)}\n` +
                 `Stock: ${stock.current_stock} links\n` +
                 `Min Price: Rp ${formatIDR(firstPrice)}/account\n\n` +
-                `${canBuy ? '✅ Ready to order!' : '❌ Insufficient balance or out of stock\n\n💡 Top up to add balance!'}`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+                `${canBuyWithBalance ? '✅ Ready to order!' : '❌ Insufficient balance or out of stock\n\n💡 Top up to add balance!'}`,
+            { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
         
