@@ -3329,7 +3329,7 @@ else if (data.startsWith('claim_gift_')) {
                 ? '❌ Out of stock! Add more accounts first.'
                 : canBuy
                     ? '✅ Ready to deliver instantly!'
-                    : '⚠️ You can order now and top up if needed.';
+                    : '⚠️ Not enough balance. Please top up.';
 
             bot.editMessageText(
                 `🔑 *BUY VERIFIED ACCOUNT*\n\n` +
@@ -3337,12 +3337,7 @@ else if (data.startsWith('claim_gift_')) {
                 `📦 Accounts available: ${available}\n\n` +
                 `💳 Your balance: Rp ${formatIDR(balance)}\n` +
                 `${statusLine}\n\n` +
-                `📦 What you get:\n` +
-                `• Spotify verified login + password\n` +
-                `• Inbox access for verification (email provided)\n\n` +
-                `🛒 How to order (same as links, no coupon needed):\n` +
-                `1) Tap *Order Account* for 1 verified account\n` +
-                `2) Balance auto-deducts on delivery — top up with QRIS/links if short`,
+                `⚡ Delivery includes access (generator.email / domain) and thank-you message.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
