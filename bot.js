@@ -956,19 +956,14 @@ async function deliverAccount(userId, orderId = 'N/A') {
 
         const safeAccount = escapeMarkdown(nextAccount);
 
-        const message = [
-            '✅ *ACCOUNT DELIVERED!*',
-            `📋 Order #: ${orderId}`,
-            `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
-            '',
-            '🔑 Credentials:',
-            `\`${safeAccount}\``,
-            '',
-            '🌐 Access: generator.email / omanin',
-            `📱 Support: ${ADMIN_USERNAME}`,
-            '',
-            'Thank you! 🙏'
-        ].join('\n');
+        const message =
+            `✅ *ACCOUNT DELIVERED!*\n\n` +
+            `📋 Order #: ${orderId}\n` +
+            `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\n\n` +
+            `🔑 Credentials:\n\`${safeAccount}\`\n\n` +
+            `🌐 Access: generator.email / omanin\n` +
+            `📱 Support: ${ADMIN_USERNAME}\n\n` +
+            `Thank you! 🙏`;
 
         await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
 
@@ -3200,23 +3195,15 @@ else if (data.startsWith('claim_gift_')) {
                 ]
             };
 
-            const messageLines = [
-                '🔑 *BUY VERIFIED ACCOUNT*',
-                '',
-                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
-                `📦 Accounts available: ${available}`,
-                '',
-                `💳 Your balance: Rp ${formatIDR(balance)}`,
-                available === 0
-                    ? '❌ Out of stock! Add more accounts first.'
-                    : canBuy
-                        ? '✅ Ready to deliver instantly!'
-                        : '⚠️ Not enough balance. Please top up.',
-                '',
-                '⚡ Delivery includes access (generator.email / omanin) and thank-you message.'
-            ].join('\n');
-
-            bot.editMessageText(messageLines, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
+            bot.editMessageText(
+                `🔑 *BUY VERIFIED ACCOUNT*\\n\\n` +
+                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\\n` +
+                `📦 Accounts available: ${available}\\n\\n` +
+                `💳 Your balance: Rp ${formatIDR(balance)}\\n` +
+                `${available === 0 ? '❌ Out of stock! Add more accounts first.' : canBuy ? '✅ Ready to deliver instantly!' : '⚠️ Not enough balance. Please top up.'}\\n\\n` +
+                `⚡ Delivery includes access (generator.email / omanin) and thank-you message.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
         }
 
         else if (data === 'confirm_buy_account') {
