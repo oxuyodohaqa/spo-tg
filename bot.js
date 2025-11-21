@@ -3340,13 +3340,7 @@ else if (data.startsWith('claim_gift_')) {
                 `📦 Accounts available: ${available}\n\n` +
                 `💳 Your balance: Rp ${formatIDR(balance)}\n` +
                 `${statusLine}\n\n` +
-                `📦 What you get:\n` +
-                `• Spotify verified login + password\n` +
-                `• Inbox access (generator.email domain)\n` +
-                `• Thank-you note and quick support\n\n` +
-                `🛒 How to order:\n` +
-                `1) Top up with QRIS/links via *Top Up Balance*\n` +
-                `2) Tap *Buy Now* for instant delivery (same flow as link orders)`,
+                `⚡ Delivery includes access (generator.email / domain) and thank-you message.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
