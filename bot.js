@@ -43,7 +43,6 @@ const TOPUPS_FILE = 'topups.json';
 const GIFT_MESSAGES_FILE = 'gift_messages.json';
 const BONUSES_FILE = 'bonuses.json';
 const ACCOUNTS_FILE = 'accounts.json';
-const CUSTOM_CONTENT_FILE = 'custom_content.json';
 
 // Default pricing
 const DEFAULT_PRICING = {
@@ -174,36 +173,6 @@ function getAccountStock() {
 
 function updateAccountStock(accounts = []) {
     saveJSON(ACCOUNTS_FILE, { accounts });
-}
-
-function getCustomContent() {
-    return loadJSON(CUSTOM_CONTENT_FILE, { products: [], buttons: [] });
-}
-
-function saveCustomContent(content) {
-    const defaults = { products: [], buttons: [] };
-    saveJSON(CUSTOM_CONTENT_FILE, { ...defaults, ...content });
-}
-
-function chunkCustomButtons(buttons = []) {
-    const rows = [];
-    for (let i = 0; i < buttons.length; i += 2) {
-        const first = buttons[i];
-        const second = buttons[i + 1];
-        const row = [];
-
-        if (first?.label && first?.url) {
-            row.push({ text: first.label, url: first.url });
-        }
-        if (second?.label && second?.url) {
-            row.push({ text: second.label, url: second.url });
-        }
-
-        if (row.length > 0) {
-            rows.push(row);
-        }
-    }
-    return rows;
 }
 
 function updateStock(quantity, links = null) {
@@ -987,21 +956,16 @@ async function deliverAccount(userId, orderId = 'N/A') {
         const nextAccount = accountStock.accounts.shift();
         updateAccountStock(accountStock.accounts);
 
-        const safeAccount = escapeInlineCode(nextAccount);
+        const safeAccount = escapeMarkdown(nextAccount);
 
-        const message = [
-            '✅ *ACCOUNT DELIVERED!*',
-            `📋 Order #: ${orderId}`,
-            `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
-            '',
-            '🔑 Credentials:',
-            `\`${safeAccount}\``,
-            '',
-            '🌐 Access: generator.email / omanin',
-            `📱 Support: ${ADMIN_USERNAME}`,
-            '',
-            'Thank you! 🙏'
-        ].join('\n');
+        const message =
+            `✅ *ACCOUNT DELIVERED!*\n\n` +
+            `📋 Order #: ${orderId}\n` +
+            `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\n\n` +
+            `🔑 Credentials:\n\`${safeAccount}\`\n\n` +
+            `🌐 Access: generator.email / omanin\n` +
+            `📱 Support: ${ADMIN_USERNAME}\n\n` +
+            `Thank you! 🙏`;
 
         await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
 
@@ -1047,13 +1011,12 @@ function broadcastAccountRestock(addedCount, totalCount) {
     const message = [
         '🎉 *VERIFIED ACCOUNTS RESTOCKED!*',
         `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
-        `📦 In stock: *${totalCount}* ready to deliver`,
+        `🔑 Total Stock: *${totalCount}* ready to claim`,
+        '',
         `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
-        '',
         '🌐 Access: generator.email / omanin',
-        '⚡ Instant drop with thank-you message',
         '',
-        'Order now: /start'
+        '⚡ Grab yours now before they sell out!'
     ].join('\n');
 
     return broadcastToAll(message, { parse_mode: 'Markdown' });
@@ -1642,7 +1605,6 @@ bot.onText(/\/start/, (msg) => {
             inline_keyboard: [
                 [{ text: '🎵 Order Spotify', callback_data: 'order' }],
                 [{ text: '🔑 Buy Account (Rp 650)', callback_data: 'buy_account' }],
-                ...(hasCustomProducts ? [[{ text: '🛍️ Custom Products', callback_data: 'custom_products' }]] : []),
                 [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
                 [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                 [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
@@ -1958,12 +1920,9 @@ bot.on('document', (msg) => {
                         const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
                         if (isAccountUpload) {
-                            const credentials = lines.filter(l => l.includes(':') || l.includes('|'));
-                            const invalidCount = lines.length - credentials.length;
-
-                            if (credentials.length === 0) {
+                            if (lines.length === 0) {
                                 bot.editMessageText(
-                                    '❌ No valid accounts found! Use email:password or user|pass format.',
+                                    '❌ No valid accounts found! Add one credential per line.',
                                     { chat_id: chatId, message_id: statusMsg.message_id }
                                 ).catch(() => {});
                                 delete userStates[chatId];
@@ -1971,15 +1930,13 @@ bot.on('document', (msg) => {
                             }
 
                             const accountStock = getAccountStock();
-                            const merged = [...(accountStock.accounts || []), ...credentials];
+                            const merged = [...(accountStock.accounts || []), ...lines];
                             updateAccountStock(merged);
 
                             bot.editMessageText(
                                 `✅ *ACCOUNTS UPLOADED!*\n\n` +
-                                `📤 Added: ${credentials.length} accounts\n` +
-                                `${invalidCount > 0 ? `⚠️ Skipped: ${invalidCount} invalid lines\n` : ''}` +
-                                `🔑 Total Accounts: ${merged.length}\n` +
-                                `📢 Broadcasting stock update to all users...\n\n` +
+                                `📤 Added: ${lines.length} accounts\n` +
+                                `🔑 Total Accounts: ${merged.length}\n\n` +
                                 `Thank you!`,
                                 {
                                     chat_id: chatId,
@@ -1987,23 +1944,6 @@ bot.on('document', (msg) => {
                                     parse_mode: 'Markdown'
                                 }
                             ).catch(() => {});
-
-                            broadcastAccountRestock(credentials.length, merged.length)
-                                .then(result => {
-                                    bot.sendMessage(chatId,
-                                        `📢 *AUTO-BROADCAST SENT!*\n\n` +
-                                        `✅ Success: ${result.success}\n` +
-                                        `❌ Failed: ${result.failed}\n` +
-                                        `👥 Total users: ${result.total}`,
-                                        { parse_mode: 'Markdown' }
-                                    ).catch(() => {});
-                                })
-                                .catch(() => {
-                                    bot.sendMessage(chatId,
-                                        '⚠️ Auto-broadcast failed to send!',
-                                        { parse_mode: 'Markdown' }
-                                    ).catch(() => {});
-                                });
 
                             delete userStates[chatId];
                             return;
@@ -2026,18 +1966,19 @@ bot.on('document', (msg) => {
 
                         const newCount = stock.links.length;
                         const newStock = stock.current_stock + links.length;
+                        const stockAdded = links.length;
 
                         updateStock(newStock, stock.links);
 
-                            bot.editMessageText(
-                                `✅ *UPLOAD SUCCESS!*\n\n` +
-                                `📤 Added: ${links.length} links\n` +
-                                `🔗 Total Links: ${newCount}\n` +
-                                `📊 Display Stock: ${newStock}\n\n` +
-                                `📢 Broadcasting stock update to all users...\n\n` +
-                                `✅ Complete!`,
-                                {
-                                    chat_id: chatId,
+                        bot.editMessageText(
+                            `✅ *UPLOAD SUCCESS!*\n\n` +
+                            `📤 Added: ${links.length} links\n` +
+                            `🔗 Total Links: ${newCount}\n` +
+                            `📊 Display Stock: ${newStock}\n\n` +
+                            `${stockAdded >= AUTO_BROADCAST_MIN_STOCK ? `📢 Auto-broadcasting to all users...\n\n` : ''}` +
+                            `✅ Complete!`,
+                            {
+                                chat_id: chatId,
                                 message_id: statusMsg.message_id,
                                 parse_mode: 'Markdown'
                             }
@@ -3331,80 +3272,15 @@ else if (data.startsWith('claim_gift_')) {
                 ]
             };
 
-            const messageLines = [
-                '🔑 *BUY VERIFIED ACCOUNT*',
-                '',
-                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
-                `📦 Accounts available: ${available}`,
-                '',
-                `💳 Your balance: Rp ${formatIDR(balance)}`,
-                available === 0
-                    ? '❌ Out of stock! Add more accounts first.'
-                    : canBuy
-                        ? '✅ Ready to deliver instantly!'
-                        : '⚠️ Not enough balance. Please top up.',
-                '',
-                '⚡ Delivery includes access (generator.email / omanin) and thank-you message.'
-            ].join('\n');
-
-            bot.editMessageText(messageLines, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
-        }
-
-        else if (data === 'custom_products') {
-            const customContent = getCustomContent();
-            const products = customContent.products || [];
-
-            const keyboard = { inline_keyboard: [] };
-
-            products.forEach(product => {
-                keyboard.inline_keyboard.push([
-                    { text: `${product.title} - Rp ${formatIDR(product.price || 0)}`, callback_data: `view_custom_product_${product.id}` }
-                ]);
-            });
-
-            keyboard.inline_keyboard.push([{ text: '🔙 Back', callback_data: 'back_to_main' }]);
-
-            const productList = products.length > 0
-                ? products.map(p => `• *${escapeMarkdown(p.title)}* — Rp ${formatIDR(p.price || 0)}`).join('\n')
-                : 'No custom products available right now.';
-
             bot.editMessageText(
-                `🛍️ *CUSTOM PRODUCTS*\n\n` +
-                `${productList}\n\n` +
-                `${products.length > 0 ? 'Tap a product to see details.' : 'Check back soon for new drops!'}`,
+                `🔑 *BUY VERIFIED ACCOUNT*\\n\\n` +
+                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\\n` +
+                `📦 Accounts available: ${available}\\n\\n` +
+                `💳 Your balance: Rp ${formatIDR(balance)}\\n` +
+                `${available === 0 ? '❌ Out of stock! Add more accounts first.' : canBuy ? '✅ Ready to deliver instantly!' : '⚠️ Not enough balance. Please top up.'}\\n\\n` +
+                `⚡ Delivery includes access (generator.email / domanin) and thank-you message.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
-        }
-
-        else if (data.startsWith('view_custom_product_')) {
-            const productId = parseInt(data.replace('view_custom_product_', ''));
-            const customContent = getCustomContent();
-            const product = (customContent.products || []).find(p => p.id === productId);
-
-            if (!product) {
-                bot.answerCallbackQuery(query.id, { text: '❌ Product not found!', show_alert: true }).catch(() => {});
-                return;
-            }
-
-            const rows = [];
-            if (product.button_label && product.button_url) {
-                rows.push([{ text: product.button_label, url: product.button_url }]);
-            }
-            rows.push([{ text: '🔙 Back', callback_data: 'custom_products' }]);
-
-            const detailLines = [
-                `🛍️ *${escapeMarkdown(product.title)}*`,
-                `💵 Price: Rp ${formatIDR(product.price || 0)}`,
-                '',
-                `${escapeMarkdown(product.description || 'No description provided.')}`
-            ];
-
-            bot.editMessageText(detailLines.join('\n'), {
-                chat_id: chatId,
-                message_id: messageId,
-                parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: rows }
-            }).catch(() => {});
         }
 
         else if (data === 'confirm_buy_account') {
@@ -3462,29 +3338,24 @@ else if (data.startsWith('claim_gift_')) {
             const newBalance = getBalance(userId);
 
             if (delivery.success) {
-                const purchaseMessage = [
-                    '✅ *ACCOUNT PURCHASED!*',
-                    '',
-                    `📋 Order: #${orderId}`,
-                    `💵 Paid: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}`,
-                    `💳 Balance left: Rp ${formatIDR(newBalance)}`,
-                    '',
-                    '🔑 Credentials sent in a separate message.',
-                    '🌐 Access: generator.email / omanin',
-                    `📱 Support: ${ADMIN_USERNAME}`
-                ].join('\\n');
-
-                bot.editMessageText(purchaseMessage, {
-                    chat_id: chatId,
-                    message_id: messageId,
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
-                            [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
-                        ]
+                bot.editMessageText(
+                    `✅ *ACCOUNT PURCHASED!*\\n\\n` +
+                    `📋 Order: #${orderId}\\n` +
+                    `💵 Paid: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}\\n` +
+                    `💳 Balance left: Rp ${formatIDR(newBalance)}\\n\\n` +
+                    `🔑 Credentials sent in a separate message.`,
+                    {
+                        chat_id: chatId,
+                        message_id: messageId,
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                                [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
+                            ]
+                        }
                     }
-                }).catch(() => {});
+                ).catch(() => {});
 
                 bot.sendMessage(ADMIN_TELEGRAM_ID,
                     `🆕 *ACCOUNT SOLD*\\n\\n` +
@@ -3819,7 +3690,6 @@ else if (data.startsWith('claim_gift_')) {
                 inline_keyboard: [
                     [{ text: '🎵 Order Spotify', callback_data: 'order' }],
                     [{ text: '🔑 Buy Account (Rp 650)', callback_data: 'buy_account' }],
-                    ...(hasCustomProducts ? [[{ text: '🛍️ Custom Products', callback_data: 'custom_products' }]] : []),
                     [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
                     [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                     [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
