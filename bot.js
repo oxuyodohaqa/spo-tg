@@ -24,7 +24,6 @@ const CLAIM_RESET_DAYS = 7;
 const LOW_STOCK_ALERT = 5;
 const ORDER_EXPIRY_MINUTES = 30;
 const ACCOUNT_MESSAGE_LIMIT = 20;
-const AUTO_BROADCAST_MIN_STOCK = 50;
 const MIN_TOPUP_AMOUNT = 0;
 const MAX_TOPUP_AMOUNT = 100000;
 const ACCOUNT_PRICE_IDR = 650;
@@ -201,22 +200,20 @@ function updateStock(quantity, links = null) {
     
     if (links !== null && quantity > previousStock) {
         const stockAdded = quantity - previousStock;
-        if (stockAdded >= AUTO_BROADCAST_MIN_STOCK) {
-            setTimeout(() => {
-                broadcastRestock(quantity).then(result => {
-                    if (bot && botReady) {
-                        bot.sendMessage(ADMIN_TELEGRAM_ID,
-                            `📢 *AUTO-BROADCAST SENT!*\n\n` +
-                            `📦 Restock: +${stockAdded} links\n` +
-                            `✅ Success: ${result.success}\n` +
-                            `❌ Failed: ${result.failed}\n` +
-                            `📊 Total users: ${result.total}`,
-                            { parse_mode: 'Markdown' }
-                        ).catch(() => {});
-                    }
-                }).catch(() => {});
-            }, 2000);
-        }
+        setTimeout(() => {
+            broadcastRestock(quantity).then(result => {
+                if (bot && botReady) {
+                    bot.sendMessage(ADMIN_TELEGRAM_ID,
+                        `📢 *AUTO-BROADCAST SENT!*\n\n` +
+                        `📦 Restock: +${stockAdded} links\n` +
+                        `✅ Success: ${result.success}\n` +
+                        `❌ Failed: ${result.failed}\n` +
+                        `📊 Total users: ${result.total}`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(() => {});
+                }
+            }).catch(() => {});
+        }, 2000);
     }
 }
 
@@ -996,7 +993,7 @@ function broadcastToAll(message, options = {}) {
 }
 
 function broadcastNewCoupon(couponData) {
-    const message = 
+    const message =
         `🎉 *NEW COUPON AVAILABLE!*\n\n` +
         `🎟️ Code: *${couponData.code}*\n` +
         `💰 Discount: *${couponData.discount_percent}% OFF*\n` +
@@ -1006,13 +1003,28 @@ function broadcastNewCoupon(couponData) {
         `${couponData.expires_at ? `⏰ Valid until: ${new Date(couponData.expires_at).toLocaleString('id-ID')}\n` : ''}` +
         `\n💡 Use this code when placing your order to get instant discount!\n\n` +
         `📱 Order now: /start`;
-    
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastAccountRestock(addedCount, totalCount) {
+    const message = [
+        '🎉 *VERIFIED ACCOUNTS RESTOCKED!*',
+        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
+        `🔑 Total Stock: *${totalCount}* ready to claim`,
+        '',
+        `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
+        '🌐 Access: generator.email / omanin',
+        '',
+        '⚡ Grab yours now before they sell out!'
+    ].join('\n');
+
     return broadcastToAll(message, { parse_mode: 'Markdown' });
 }
 
 function broadcastRestock(quantity) {
     const pricing = getPricing();
-    const pricingText = Object.keys(pricing).slice(0, 4).map(range => 
+    const pricingText = Object.keys(pricing).slice(0, 4).map(range =>
         `• ${range}: Rp ${formatIDR(pricing[range])}/account`
     ).join('\n');
     
@@ -3206,7 +3218,7 @@ else if (data.startsWith('claim_gift_')) {
                 `📦 Accounts available: ${available}\\n\\n` +
                 `💳 Your balance: Rp ${formatIDR(balance)}\\n` +
                 `${available === 0 ? '❌ Out of stock! Add more accounts first.' : canBuy ? '✅ Ready to deliver instantly!' : '⚠️ Not enough balance. Please top up.'}\\n\\n` +
-                `⚡ Delivery includes access (generator.email / omanin) and thank-you message.`,
+                `⚡ Delivery includes access (generator.email / domanin) and thank-you message.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
