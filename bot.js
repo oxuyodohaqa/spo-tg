@@ -3352,6 +3352,7 @@ else if (data.startsWith('claim_gift_')) {
             const balance = getBalance(userId);
             const accountStock = getAccountStock();
             const available = accountStock.accounts?.length || 0;
+            const canBuy = available > 0 && balance >= ACCOUNT_PRICE_IDR;
 
             const keyboard = {
                 inline_keyboard: [
