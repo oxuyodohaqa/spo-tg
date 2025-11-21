@@ -27,6 +27,7 @@ const ACCOUNT_MESSAGE_LIMIT = 20;
 const AUTO_BROADCAST_MIN_STOCK = 50;
 const MIN_TOPUP_AMOUNT = 0;
 const MAX_TOPUP_AMOUNT = 100000;
+const ACCOUNT_PRICE_IDR = 650;
 
 // File paths
 const ORDERS_FILE = 'orders.json';
@@ -42,6 +43,7 @@ const PENDING_PAYMENTS_FILE = 'pending_payments.json';
 const TOPUPS_FILE = 'topups.json';
 const GIFT_MESSAGES_FILE = 'gift_messages.json';
 const BONUSES_FILE = 'bonuses.json';
+const ACCOUNTS_FILE = 'accounts.json';
 
 // Default pricing
 const DEFAULT_PRICING = {
@@ -109,6 +111,11 @@ function escapeMarkdown(text) {
         .replace(/\./g, '\\.');
 }
 
+function escapeInlineCode(text) {
+    if (!text) return '';
+    return String(text).replace(/`/g, '\\`');
+}
+
 function loadJSON(filename, defaultValue = {}) {
     try {
         if (fs.existsSync(filename)) {
@@ -159,6 +166,14 @@ function getNextTopupId() {
 
 function getStock() {
     return loadJSON(STOCK_FILE, { current_stock: 0, links: [] });
+}
+
+function getAccountStock() {
+    return loadJSON(ACCOUNTS_FILE, { accounts: [] });
+}
+
+function updateAccountStock(accounts = []) {
+    saveJSON(ACCOUNTS_FILE, { accounts });
 }
 
 function updateStock(quantity, links = null) {
@@ -427,6 +442,10 @@ function getOrderTotalQuantity(order) {
 
 function formatOrderQuantitySummary(order) {
     if (!order) return '0 links';
+    if (order.product === 'account' || order.type === 'account') {
+        const total = getOrderTotalQuantity(order);
+        return `${total} account${total > 1 ? 's' : ''}`;
+    }
     const total = getOrderTotalQuantity(order);
     if (order.bonus_quantity && order.bonus_quantity > 0) {
         return `${order.quantity} + ${order.bonus_quantity} bonus = ${total} links`;
@@ -926,6 +945,42 @@ async function deliverlinks(userId, orderId, quantity, bonusQuantity = 0) {
     } catch (error) {
         console.error('Error delivering links:', error.message);
         return false;
+    }
+}
+
+async function deliverAccount(userId, orderId = 'N/A') {
+    try {
+        const accountStock = getAccountStock();
+
+        if (!accountStock.accounts || accountStock.accounts.length === 0) {
+            return { success: false, message: '❌ No accounts available to deliver!' };
+        }
+
+        const nextAccount = accountStock.accounts.shift();
+        updateAccountStock(accountStock.accounts);
+
+        const safeAccount = escapeInlineCode(nextAccount);
+
+        const message = [
+            '✅ *ACCOUNT DELIVERED!*',
+            `📋 Order #: ${orderId}`,
+            `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
+            '',
+            '🔑 Credentials:',
+            `\`${safeAccount}\``,
+            '',
+            '🌐 Access: generator.email / omanin',
+            `📱 Support: ${ADMIN_USERNAME}`,
+            '',
+            'Thank you! 🙏'
+        ].join('\n');
+
+        await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
+
+        return { success: true, delivered: nextAccount };
+    } catch (error) {
+        console.error('Error delivering account:', error.message);
+        return { success: false, message: '❌ Failed to deliver account.' };
     }
 }
 
@@ -1480,6 +1535,7 @@ bot.onText(/\/start/, (msg) => {
                         { text: '📦 Stock', callback_data: 'admin_stock' }
                     ],
                     [
+                        { text: '🔑 Accounts', callback_data: 'admin_accounts' },
                         { text: '💵 Pricing', callback_data: 'admin_pricing' },
                         { text: '🎟️ Coupons', callback_data: 'admin_coupons' }
                     ],
@@ -1507,6 +1563,7 @@ bot.onText(/\/start/, (msg) => {
             const users = getUsers();
             const orders = getOrders();
             const stock = getStock();
+            const accountStock = getAccountStock();
             const pendingTopups = getPendingTopups();
             
             bot.sendMessage(chatId, 
@@ -1517,6 +1574,7 @@ bot.onText(/\/start/, (msg) => {
                 `• Orders: ${orders.length}\n` +
                 `• Stock: ${stock.current_stock}\n` +
                 `• Links: ${stock.links.length}\n` +
+                `• Accounts: ${accountStock.accounts?.length || 0}\n` +
                 `• Pending Top-ups: ${pendingTopups.length}\n\n` +
                 `📅 ${getCurrentDateTime()}`,
                 { parse_mode: 'Markdown', reply_markup: keyboard }
@@ -1534,6 +1592,7 @@ bot.onText(/\/start/, (msg) => {
         const keyboard = {
             inline_keyboard: [
                 [{ text: '🎵 Order Spotify', callback_data: 'order' }],
+                [{ text: '🔑 Buy Account (Rp 650)', callback_data: 'buy_account' }],
                 [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
                 [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                 [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
@@ -1544,10 +1603,11 @@ bot.onText(/\/start/, (msg) => {
             ]
         };
         
-        bot.sendMessage(chatId, 
+        bot.sendMessage(chatId,
             `🎉 *Welcome to Spotify Store!*\n\n` +
             `Hi ${escapeMarkdown(user.first_name)}! 👋\n\n` +
             `🎵 Spotify Student PREMIUM\n` +
+            `🔑 Verified Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (balance only)\n` +
             `💳 Balance: Rp ${formatIDR(balance)}\n` +
             `📦 Stock: ${stock.current_stock} links\n\n` +
             `💰 *Pricing:*\n` +
@@ -1816,9 +1876,16 @@ bot.on('document', (msg) => {
     try {
         const chatId = msg.chat.id;
         const userId = msg.from.id;
-        
+
         if (!isAdmin(userId)) return;
-        
+
+        const state = userStates[chatId];
+        const uploadMode = state?.state;
+        const isAccountUpload = uploadMode === 'awaiting_account_upload';
+        const isLinkUpload = uploadMode === 'awaiting_stock_upload' || !uploadMode;
+
+        if (!isAccountUpload && !isLinkUpload) return;
+
         const document = msg.document;
         
         if (!document.file_name.endsWith('.txt')) {
@@ -1826,7 +1893,9 @@ bot.on('document', (msg) => {
             return;
         }
         
-        bot.sendMessage(chatId, '⏳ Uploading links...').then(statusMsg => {
+        const uploadingText = isAccountUpload ? '⏳ Uploading accounts...' : '⏳ Uploading links...';
+
+        bot.sendMessage(chatId, uploadingText).then(statusMsg => {
             bot.getFile(document.file_id).then(file => {
                 const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
                 
@@ -1835,29 +1904,63 @@ bot.on('document', (msg) => {
                     let data = '';
                     res.on('data', chunk => data += chunk);
                     res.on('end', () => {
-                        const links = data.split('\n')
-                            .map(l => l.trim())
-                            .filter(l => l.length > 0 && l.startsWith('http'));
-                        
+                        const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+                        if (isAccountUpload) {
+                            const credentials = lines.filter(l => l.includes(':') || l.includes('|'));
+                            const invalidCount = lines.length - credentials.length;
+
+                            if (credentials.length === 0) {
+                                bot.editMessageText(
+                                    '❌ No valid accounts found! Use email:password or user|pass format.',
+                                    { chat_id: chatId, message_id: statusMsg.message_id }
+                                ).catch(() => {});
+                                delete userStates[chatId];
+                                return;
+                            }
+
+                            const accountStock = getAccountStock();
+                            const merged = [...(accountStock.accounts || []), ...credentials];
+                            updateAccountStock(merged);
+
+                            bot.editMessageText(
+                                `✅ *ACCOUNTS UPLOADED!*\n\n` +
+                                `📤 Added: ${credentials.length} accounts\n` +
+                                `${invalidCount > 0 ? `⚠️ Skipped: ${invalidCount} invalid lines\n` : ''}` +
+                                `🔑 Total Accounts: ${merged.length}\n\n` +
+                                `Thank you!`,
+                                {
+                                    chat_id: chatId,
+                                    message_id: statusMsg.message_id,
+                                    parse_mode: 'Markdown'
+                                }
+                            ).catch(() => {});
+
+                            delete userStates[chatId];
+                            return;
+                        }
+
+                        const links = lines.filter(l => l.startsWith('http'));
+
                         if (links.length === 0) {
                             bot.editMessageText(
                                 '❌ No valid links found!\n\nLinks must start with http',
                                 { chat_id: chatId, message_id: statusMsg.message_id }
                             ).catch(() => {});
+                            delete userStates[chatId];
                             return;
                         }
-                        
+
                         const stock = getStock();
-                        const previousStock = stock.current_stock;
-                        
+
                         links.forEach(link => stock.links.push(link));
-                        
+
                         const newCount = stock.links.length;
                         const newStock = stock.current_stock + links.length;
                         const stockAdded = links.length;
-                        
+
                         updateStock(newStock, stock.links);
-                        
+
                         bot.editMessageText(
                             `✅ *UPLOAD SUCCESS!*\n\n` +
                             `📤 Added: ${links.length} links\n` +
@@ -1865,12 +1968,14 @@ bot.on('document', (msg) => {
                             `📊 Display Stock: ${newStock}\n\n` +
                             `${stockAdded >= AUTO_BROADCAST_MIN_STOCK ? `📢 Auto-broadcasting to all users...\n\n` : ''}` +
                             `✅ Complete!`,
-                            { 
-                                chat_id: chatId, 
+                            {
+                                chat_id: chatId,
                                 message_id: statusMsg.message_id,
                                 parse_mode: 'Markdown'
                             }
                         ).catch(() => {});
+
+                        delete userStates[chatId];
                     });
                 }).on('error', (err) => {
                     console.error('Download error:', err.message);
@@ -2859,6 +2964,8 @@ else if (data.startsWith('claim_gift_')) {
         
         else if (data === 'upload_stock_instruction') {
             if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_stock_upload' };
             
             bot.sendMessage(chatId,
                 `📤 *UPLOAD STOCK*\n\n` +
@@ -2869,6 +2976,56 @@ else if (data.startsWith('claim_gift_')) {
                 `💡 Auto-broadcast if 50+ links added!`,
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
+        }
+
+        else if (data === 'admin_accounts') {
+            if (!isAdmin(userId)) return;
+
+            const accountStock = getAccountStock();
+            const available = accountStock.accounts?.length || 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '📤 Upload Accounts File', callback_data: 'upload_account_instruction' }],
+                    [{ text: '📊 Check Account Stock', callback_data: 'check_account_stock' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🔑 *ACCOUNT INVENTORY*\n\n` +
+                `📦 Accounts available: ${available}\n\n` +
+                `Use the options below to upload or check stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'upload_account_instruction') {
+            if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_account_upload' };
+
+            bot.sendMessage(chatId,
+                `📤 *UPLOAD VERIFIED ACCOUNTS*\n\n` +
+                `Send a .txt file now with one credential per line.\n\n` +
+                `Example:\n` +
+                `email:password\n` +
+                `user|pass` +
+                `\n\nKeep each account on its own line.`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'check_account_stock') {
+            if (!isAdmin(userId)) return;
+
+            const accountStock = getAccountStock();
+            const available = accountStock.accounts?.length || 0;
+
+            bot.answerCallbackQuery(query.id, {
+                text: `📦 Accounts available: ${available}`,
+                show_alert: true
+            }).catch(() => {});
         }
         
         else if (data === 'update_display_stock') {
@@ -3034,6 +3191,139 @@ else if (data.startsWith('claim_gift_')) {
         }
         
         // ===== USER MAIN MENU BUTTONS =====
+        else if (data === 'buy_account') {
+            const balance = getBalance(userId);
+            const accountStock = getAccountStock();
+            const available = accountStock.accounts?.length || 0;
+            const canBuy = available > 0 && balance >= ACCOUNT_PRICE_IDR;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [
+                        canBuy
+                            ? { text: `✅ Buy Now (Rp ${formatIDR(ACCOUNT_PRICE_IDR)})`, callback_data: 'confirm_buy_account' }
+                            : { text: '💵 Top Up Balance', callback_data: 'topup_balance' }
+                    ],
+                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
+            };
+
+            const messageLines = [
+                '🔑 *BUY VERIFIED ACCOUNT*',
+                '',
+                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
+                `📦 Accounts available: ${available}`,
+                '',
+                `💳 Your balance: Rp ${formatIDR(balance)}`,
+                available === 0
+                    ? '❌ Out of stock! Add more accounts first.'
+                    : canBuy
+                        ? '✅ Ready to deliver instantly!'
+                        : '⚠️ Not enough balance. Please top up.',
+                '',
+                '⚡ Delivery includes access (generator.email / omanin) and thank-you message.'
+            ].join('\n');
+
+            bot.editMessageText(messageLines, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
+        }
+
+        else if (data === 'confirm_buy_account') {
+            const balance = getBalance(userId);
+            const accountStock = getAccountStock();
+            const available = accountStock.accounts?.length || 0;
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No accounts in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            if (balance < ACCOUNT_PRICE_IDR) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ Not enough balance! Top up first.',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            updateBalance(userId, -ACCOUNT_PRICE_IDR);
+
+            const orderId = getNextOrderId();
+            const users = getUsers();
+            const order = {
+                order_id: orderId,
+                user_id: userId,
+                username: users[userId]?.username || query.from.username || 'unknown',
+                quantity: 1,
+                total_quantity: 1,
+                original_price: ACCOUNT_PRICE_IDR,
+                total_price: ACCOUNT_PRICE_IDR,
+                status: 'completed',
+                payment_method: 'balance',
+                date: new Date().toISOString(),
+                completed_at: new Date().toISOString(),
+                product: 'account'
+            };
+
+            addOrder(order);
+
+            if (!users[userId]) {
+                addUser(userId, query.from);
+            }
+
+            const updatedUsers = getUsers();
+            updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+            updatedUsers[userId].completed_orders = (updatedUsers[userId].completed_orders || 0) + 1;
+            saveJSON(USERS_FILE, updatedUsers);
+
+            const delivery = await deliverAccount(userId, orderId);
+            const newBalance = getBalance(userId);
+
+            if (delivery.success) {
+                bot.editMessageText(
+                    `✅ *ACCOUNT PURCHASED!*\\n\\n` +
+                    `📋 Order: #${orderId}\\n` +
+                    `💵 Paid: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}\\n` +
+                    `💳 Balance left: Rp ${formatIDR(newBalance)}\\n\\n` +
+                    `🔑 Credentials sent in a separate message.`,
+                    {
+                        chat_id: chatId,
+                        message_id: messageId,
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                                [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
+                            ]
+                        }
+                    }
+                ).catch(() => {});
+
+                bot.sendMessage(ADMIN_TELEGRAM_ID,
+                    `🆕 *ACCOUNT SOLD*\\n\\n` +
+                    `User: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')} (${userId})\\n` +
+                    `Order: #${orderId}\\n` +
+                    `Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}\\n` +
+                    `Remaining accounts: ${(getAccountStock().accounts || []).length}`,
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+            } else {
+                updateBalance(userId, ACCOUNT_PRICE_IDR);
+                updateOrder(orderId, { status: 'failed' });
+
+                bot.editMessageText(
+                    `❌ *DELIVERY FAILED*\\n\\n` +
+                    `Order: #${orderId}\\n` +
+                    `Your payment has been refunded.\\n\\n` +
+                    `Please contact ${ADMIN_USERNAME} for help.`,
+                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+                ).catch(() => {});
+            }
+        }
+
         else if (data === 'order') {
             const pricing = getPricing();
             const stock = getStock();
@@ -3341,6 +3631,7 @@ else if (data.startsWith('claim_gift_')) {
             const keyboard = {
                 inline_keyboard: [
                     [{ text: '🎵 Order Spotify', callback_data: 'order' }],
+                    [{ text: '🔑 Buy Account (Rp 650)', callback_data: 'buy_account' }],
                     [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
                     [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                     [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
@@ -3355,14 +3646,15 @@ else if (data.startsWith('claim_gift_')) {
             const bonuses = getBonuses();
             const bonusText = bonuses.length > 0 ? `\n\n🎁 *Bonus Deals:*\n${formatBonusDealsList()}` : '';
 
-            bot.editMessageText(
-                `🎉 *Welcome Back!*\n\n` +
-                `Hi ${escapeMarkdown(query.from.first_name)}! 👋\n\n` +
-                `💳 Balance: Rp ${formatIDR(balance)}\n` +
-                `📦 Stock: ${stock.current_stock} links\n\n` +
-                `💰 Prices:\n${pricingText}${bonusText}`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
+                bot.editMessageText(
+                    `🎉 *Welcome Back!*\n\n` +
+                    `Hi ${escapeMarkdown(query.from.first_name)}! 👋\n\n` +
+                    `💳 Balance: Rp ${formatIDR(balance)}\n` +
+                    `🔑 Verified Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (balance only)\n` +
+                    `📦 Stock: ${stock.current_stock} links\n\n` +
+                    `💰 Prices:\n${pricingText}${bonusText}`,
+                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+                ).catch(() => {});
         }
         
         else if (data === 'back_to_admin_main') {
@@ -3641,6 +3933,38 @@ else if (data.startsWith('claim_gift_')) {
         
     } catch (error) {
         console.error('Error in callback query:', error.message);
+    }
+});
+
+// ============================================
+// ADMIN COMMANDS
+// ============================================
+
+bot.onText(/\/deliver_account\s+(\d+)(?:\s+(\d+))?/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+
+    if (!isAdmin(userId)) return;
+
+    const targetUserId = parseInt(match[1]);
+    const orderId = match[2] ? parseInt(match[2]) : 'manual';
+
+    if (isNaN(targetUserId)) {
+        bot.sendMessage(chatId, '❌ Please provide a valid user ID!').catch(() => {});
+        return;
+    }
+
+    const result = await deliverAccount(targetUserId, orderId);
+
+    if (result.success) {
+        bot.sendMessage(chatId,
+            `✅ Account sent to user ${targetUserId}!\n\n` +
+            `📋 Order #: ${orderId}\n` +
+            `🔑 Delivered: ${result.delivered}`,
+            { parse_mode: 'Markdown' }
+        ).catch(() => {});
+    } else {
+        bot.sendMessage(chatId, result.message || '❌ Failed to deliver account.').catch(() => {});
     }
 });
 
