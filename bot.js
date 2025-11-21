@@ -3328,13 +3328,19 @@ else if (data.startsWith('claim_gift_')) {
                 ]
             };
 
+            const statusLine = available === 0
+                ? '❌ Out of stock! Add more accounts first.'
+                : canBuy
+                    ? '✅ Ready to deliver instantly!'
+                    : '⚠️ Not enough balance. Please top up.';
+
             bot.editMessageText(
-                `🔑 *BUY VERIFIED ACCOUNT*\\n\\n` +
-                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\\n` +
-                `📦 Accounts available: ${available}\\n\\n` +
-                `💳 Your balance: Rp ${formatIDR(balance)}\\n` +
-                `${available === 0 ? '❌ Out of stock! Add more accounts first.' : canBuy ? '✅ Ready to deliver instantly!' : '⚠️ Not enough balance. Please top up.'}\\n\\n` +
-                `⚡ Delivery includes access (generator.email / domanin) and thank-you message.`,
+                `🔑 *BUY VERIFIED ACCOUNT*\n\n` +
+                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\n` +
+                `📦 Accounts available: ${available}\n\n` +
+                `💳 Your balance: Rp ${formatIDR(balance)}\n` +
+                `${statusLine}\n\n` +
+                `⚡ Delivery includes access (generator.email / domain) and thank-you message.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
