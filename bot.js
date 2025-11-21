@@ -27,6 +27,7 @@ const ACCOUNT_MESSAGE_LIMIT = 20;
 const MIN_TOPUP_AMOUNT = 0;
 const MAX_TOPUP_AMOUNT = 100000;
 const ACCOUNT_PRICE_IDR = 650;
+const AUTO_BROADCAST_MIN_STOCK = 1;
 
 // File paths
 const ORDERS_FILE = 'orders.json';
@@ -1672,7 +1673,7 @@ bot.onText(/\/start/, (msg) => {
                 `🎉 *Welcome to Spotify Store!*\n\n` +
                 `Hi ${escapeMarkdown(user.first_name)}! 👋\n\n` +
                 `🎵 Spotify Student PREMIUM\n` +
-                `🔑 Verified Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (balance only)\n` +
+                `🔑 Verified Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}\n` +
                 `💳 Balance: Rp ${formatIDR(balance)}\n` +
                 `📦 Stock: ${linkAvailable} links\n` +
                 `🔑 Accounts in stock: ${accountAvailable}\n\n` +
@@ -1985,6 +1986,8 @@ bot.on('document', (msg) => {
                             const accountStock = getAccountStock();
                             const merged = [...(accountStock.accounts || []), ...lines];
                             updateAccountStock(merged);
+
+                            broadcastAccountRestock(lines.length, merged.length).catch(() => {});
 
                             bot.editMessageText(
                                 `✅ *ACCOUNTS UPLOADED!*\n\n` +
@@ -3130,7 +3133,7 @@ else if (data.startsWith('claim_gift_')) {
                 `Format:\n` +
                 `• One link per line\n` +
                 `• Must start with http\n\n` +
-                `💡 Auto-broadcast if 50+ links added!`,
+                `💡 Stock uploads auto-broadcast to all users.`,
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
         }
@@ -3168,7 +3171,8 @@ else if (data.startsWith('claim_gift_')) {
                 `Example:\n` +
                 `email:password\n` +
                 `user|pass` +
-                `\n\nKeep each account on its own line.`,
+                `\n\nKeep each account on its own line.\n` +
+                `💡 Uploads auto-broadcast the restock to users.`,
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
         }
@@ -3349,7 +3353,6 @@ else if (data.startsWith('claim_gift_')) {
         
         // ===== USER MAIN MENU BUTTONS =====
         else if (data === 'buy_account') {
-            const balance = getBalance(userId);
             const accountStock = getAccountStock();
             const available = accountStock.accounts?.length || 0;
             const canBuy = available > 0;
@@ -3374,7 +3377,6 @@ else if (data.startsWith('claim_gift_')) {
                 `🔑 *BUY VERIFIED ACCOUNT*\n\n` +
                 `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\n` +
                 `📦 Accounts available: ${available}\n\n` +
-                `💳 Your balance: Rp ${formatIDR(balance)}\n` +
                 `${statusLine}\n\n` +
                 `⚡ Delivery includes access (generator.email / domain) and thank-you message.\n` +
                 `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
