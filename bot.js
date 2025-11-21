@@ -3006,6 +3006,7 @@ else if (data.startsWith('claim_gift_')) {
                         { text: '➕ Add Product', callback_data: 'admin_add_custom_product' },
                         { text: '🔗 Add Custom Button', callback_data: 'admin_add_custom_button' }
                     ],
+                    [{ text: '🗑️ Manage Buttons', callback_data: 'admin_manage_custom_buttons' }],
                     [{ text: '👀 Preview User View', callback_data: 'custom_products' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
                 ]
@@ -3016,6 +3017,19 @@ else if (data.startsWith('claim_gift_')) {
                 `• Products: ${productsCount}\n` +
                 `• Extra buttons: ${buttonsCount}\n\n` +
                 `Use the options below to add new entries or preview how users see them.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+        else if (data === 'admin_manage_custom_buttons') {
+            if (!isAdmin(userId)) return;
+
+            const customContent = getCustomContent();
+            const hasButtons = (customContent.buttons || []).length > 0;
+            const keyboard = buildCustomButtonsManager(customContent);
+
+            bot.editMessageText(
+                `🗑️ *MANAGE CUSTOM BUTTONS*\n\n` +
+                `${hasButtons ? 'Tap a button to remove it.' : 'No custom buttons yet.'}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -3044,6 +3058,33 @@ else if (data.startsWith('claim_gift_')) {
                 `Send in this format:\n` +
                 `Button text | https://link`,
                 { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+        else if (data.startsWith('remove_custom_button:')) {
+            if (!isAdmin(userId)) return;
+
+            const buttonId = data.replace('remove_custom_button:', '');
+            const content = getCustomContent();
+            const beforeCount = (content.buttons || []).length;
+            content.buttons = (content.buttons || []).filter(btn => `${btn.id}` !== buttonId);
+
+            if (beforeCount === content.buttons.length) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ Button not found',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            saveCustomContent(content);
+
+            const keyboard = buildCustomButtonsManager(content);
+            const hasButtons = content.buttons.length > 0;
+
+            bot.editMessageText(
+                `🗑️ *MANAGE CUSTOM BUTTONS*\n\n` +
+                `${hasButtons ? '✅ Button removed. Tap another to delete.' : '✅ Button removed. No custom buttons left.'}`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
         
@@ -4585,7 +4626,10 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             }
 
             const content = getCustomContent();
-            content.buttons = [...(content.buttons || []), { label, url }];
+            content.buttons = [
+                ...(content.buttons || []),
+                { id: `${Date.now()}_${Math.floor(Math.random() * 1000)}`, label, url }
+            ];
             saveCustomContent(content);
 
             bot.sendMessage(chatId,
