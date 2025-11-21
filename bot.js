@@ -956,21 +956,16 @@ async function deliverAccount(userId, orderId = 'N/A') {
         const nextAccount = accountStock.accounts.shift();
         updateAccountStock(accountStock.accounts);
 
-        const safeAccount = escapeInlineCode(nextAccount);
+        const safeAccount = escapeMarkdown(nextAccount);
 
-        const message = [
-            '✅ *ACCOUNT DELIVERED!*',
-            `📋 Order #: ${orderId}`,
-            `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
-            '',
-            '🔑 Credentials:',
-            `\`${safeAccount}\``,
-            '',
-            '🌐 Access: generator.email / omanin',
-            `📱 Support: ${ADMIN_USERNAME}`,
-            '',
-            'Thank you! 🙏'
-        ].join('\n');
+        const message =
+            `✅ *ACCOUNT DELIVERED!*\n\n` +
+            `📋 Order #: ${orderId}\n` +
+            `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\n\n` +
+            `🔑 Credentials:\n\`${safeAccount}\`\n\n` +
+            `🌐 Access: generator.email / omanin\n` +
+            `📱 Support: ${ADMIN_USERNAME}\n\n` +
+            `Thank you! 🙏`;
 
         await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
 
@@ -1919,12 +1914,9 @@ bot.on('document', (msg) => {
                         const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
                         if (isAccountUpload) {
-                            const credentials = lines.filter(l => l.includes(':') || l.includes('|'));
-                            const invalidCount = lines.length - credentials.length;
-
-                            if (credentials.length === 0) {
+                            if (lines.length === 0) {
                                 bot.editMessageText(
-                                    '❌ No valid accounts found! Use email:password or user|pass format.',
+                                    '❌ No valid accounts found! Add one credential per line.',
                                     { chat_id: chatId, message_id: statusMsg.message_id }
                                 ).catch(() => {});
                                 delete userStates[chatId];
@@ -1932,15 +1924,13 @@ bot.on('document', (msg) => {
                             }
 
                             const accountStock = getAccountStock();
-                            const merged = [...(accountStock.accounts || []), ...credentials];
+                            const merged = [...(accountStock.accounts || []), ...lines];
                             updateAccountStock(merged);
 
                             bot.editMessageText(
                                 `✅ *ACCOUNTS UPLOADED!*\n\n` +
-                                `📤 Added: ${credentials.length} accounts\n` +
-                                `${invalidCount > 0 ? `⚠️ Skipped: ${invalidCount} invalid lines\n` : ''}` +
-                                `🔑 Total Accounts: ${merged.length}\n` +
-                                `📢 Broadcasting stock update to all users...\n\n` +
+                                `📤 Added: ${lines.length} accounts\n` +
+                                `🔑 Total Accounts: ${merged.length}\n\n` +
                                 `Thank you!`,
                                 {
                                     chat_id: chatId,
@@ -1948,23 +1938,6 @@ bot.on('document', (msg) => {
                                     parse_mode: 'Markdown'
                                 }
                             ).catch(() => {});
-
-                            broadcastAccountRestock(credentials.length, merged.length)
-                                .then(result => {
-                                    bot.sendMessage(chatId,
-                                        `📢 *AUTO-BROADCAST SENT!*\n\n` +
-                                        `✅ Success: ${result.success}\n` +
-                                        `❌ Failed: ${result.failed}\n` +
-                                        `👥 Total users: ${result.total}`,
-                                        { parse_mode: 'Markdown' }
-                                    ).catch(() => {});
-                                })
-                                .catch(() => {
-                                    bot.sendMessage(chatId,
-                                        '⚠️ Auto-broadcast failed to send!',
-                                        { parse_mode: 'Markdown' }
-                                    ).catch(() => {});
-                                });
 
                             delete userStates[chatId];
                             return;
@@ -1987,18 +1960,19 @@ bot.on('document', (msg) => {
 
                         const newCount = stock.links.length;
                         const newStock = stock.current_stock + links.length;
+                        const stockAdded = links.length;
 
                         updateStock(newStock, stock.links);
 
-                            bot.editMessageText(
-                                `✅ *UPLOAD SUCCESS!*\n\n` +
-                                `📤 Added: ${links.length} links\n` +
-                                `🔗 Total Links: ${newCount}\n` +
-                                `📊 Display Stock: ${newStock}\n\n` +
-                                `📢 Broadcasting stock update to all users...\n\n` +
-                                `✅ Complete!`,
-                                {
-                                    chat_id: chatId,
+                        bot.editMessageText(
+                            `✅ *UPLOAD SUCCESS!*\n\n` +
+                            `📤 Added: ${links.length} links\n` +
+                            `🔗 Total Links: ${newCount}\n` +
+                            `📊 Display Stock: ${newStock}\n\n` +
+                            `${stockAdded >= AUTO_BROADCAST_MIN_STOCK ? `📢 Auto-broadcasting to all users...\n\n` : ''}` +
+                            `✅ Complete!`,
+                            {
+                                chat_id: chatId,
                                 message_id: statusMsg.message_id,
                                 parse_mode: 'Markdown'
                             }
@@ -3238,23 +3212,15 @@ else if (data.startsWith('claim_gift_')) {
                 ]
             };
 
-            const messageLines = [
-                '🔑 *BUY VERIFIED ACCOUNT*',
-                '',
-                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
-                `📦 Accounts available: ${available}`,
-                '',
-                `💳 Your balance: Rp ${formatIDR(balance)}`,
-                available === 0
-                    ? '❌ Out of stock! Add more accounts first.'
-                    : canBuy
-                        ? '✅ Ready to deliver instantly!'
-                        : '⚠️ Not enough balance. Please top up.',
-                '',
-                '⚡ Delivery includes access (generator.email / omanin) and thank-you message.'
-            ].join('\n');
-
-            bot.editMessageText(messageLines, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
+            bot.editMessageText(
+                `🔑 *BUY VERIFIED ACCOUNT*\\n\\n` +
+                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\\n` +
+                `📦 Accounts available: ${available}\\n\\n` +
+                `💳 Your balance: Rp ${formatIDR(balance)}\\n` +
+                `${available === 0 ? '❌ Out of stock! Add more accounts first.' : canBuy ? '✅ Ready to deliver instantly!' : '⚠️ Not enough balance. Please top up.'}\\n\\n` +
+                `⚡ Delivery includes access (generator.email / domanin) and thank-you message.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
         }
 
         else if (data === 'confirm_buy_account') {
