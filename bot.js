@@ -985,9 +985,8 @@ async function deliverAccount(userId, orderId = 'N/A') {
             `📋 Order #: ${orderId}\n` +
             `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\n\n` +
             `🔑 Credentials:\n\`${safeAccount}\`\n\n` +
-            `🌐 Access: generator.email / omanin\n` +
-            `📱 Support: ${ADMIN_USERNAME}\n\n` +
-            `Thank you! 🙏`;
+            `📥 Inbox access included for verification\n` +
+            `📱 Support: ${ADMIN_USERNAME}`;
 
         await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
 
@@ -995,6 +994,41 @@ async function deliverAccount(userId, orderId = 'N/A') {
     } catch (error) {
         console.error('Error delivering account:', error.message);
         return { success: false, message: '❌ Failed to deliver account.' };
+    }
+}
+
+async function deliverAccounts(userId, orderId, quantity, pricePerAccount = ACCOUNT_PRICE_IDR) {
+    try {
+        const accountStock = getAccountStock();
+
+        if (!accountStock.accounts || accountStock.accounts.length < quantity) {
+            return { success: false, message: '❌ Not enough accounts available to deliver!' };
+        }
+
+        const delivered = accountStock.accounts.splice(0, quantity);
+        updateAccountStock(accountStock.accounts);
+
+        const credentials = delivered
+            .map(acc => `• \`${escapeMarkdown(acc)}\``)
+            .join('\n');
+
+        const totalPrice = quantity * pricePerAccount;
+
+        const message =
+            `✅ *ACCOUNT${quantity > 1 ? 'S' : ''} DELIVERED!*\n\n` +
+            `📋 Order #: ${orderId}\n` +
+            `🔢 Quantity: ${quantity}\n` +
+            `💵 Total: Rp ${formatIDR(totalPrice)} (${formatIDR(pricePerAccount)} each)\n\n` +
+            `🔑 Credentials:\n${credentials}\n\n` +
+            `📥 Inbox access included for verification\n` +
+            `📱 Support: ${ADMIN_USERNAME}`;
+
+        await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
+
+        return { success: true, delivered };
+    } catch (error) {
+        console.error('Error delivering multiple accounts:', error.message);
+        return { success: false, message: '❌ Failed to deliver account(s).' };
     }
 }
 
@@ -1036,7 +1070,7 @@ function broadcastAccountRestock(addedCount, totalCount) {
         `🔑 Total Stock: *${totalCount}* ready to claim`,
         '',
         `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
-        '🌐 Access: generator.email / omanin',
+        '📥 Inbox access included for verification',
         '',
         '⚡ Grab yours now before they sell out!'
     ].join('\n');
@@ -1612,6 +1646,9 @@ bot.onText(/\/start/, (msg) => {
         
         const balance = getBalance(userId);
         const stock = getStock();
+        const accountStock = getAccountStock();
+        const accountAvailable = accountStock.accounts?.length || 0;
+        const linkAvailable = stock.links?.length || 0;
         const pricing = getPricing();
         const pricingText = Object.keys(pricing).slice(0, 3).map(range =>
             `• ${range}: Rp ${formatIDR(pricing[range])}`
@@ -1631,15 +1668,16 @@ bot.onText(/\/start/, (msg) => {
             ]
         };
         
-        bot.sendMessage(chatId,
-            `🎉 *Welcome to Spotify Store!*\n\n` +
-            `Hi ${escapeMarkdown(user.first_name)}! 👋\n\n` +
-            `🎵 Spotify Student PREMIUM\n` +
-            `🔑 Verified Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (balance only)\n` +
-            `💳 Balance: Rp ${formatIDR(balance)}\n` +
-            `📦 Stock: ${stock.current_stock} links\n\n` +
-            `💰 *Pricing:*\n` +
-            `${pricingText}\n\n` +
+            bot.sendMessage(chatId,
+                `🎉 *Welcome to Spotify Store!*\n\n` +
+                `Hi ${escapeMarkdown(user.first_name)}! 👋\n\n` +
+                `🎵 Spotify Student PREMIUM\n` +
+                `🔑 Verified Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (balance only)\n` +
+                `💳 Balance: Rp ${formatIDR(balance)}\n` +
+                `📦 Stock: ${linkAvailable} links\n` +
+                `🔑 Accounts in stock: ${accountAvailable}\n\n` +
+                `💰 *Pricing:*\n` +
+                `${pricingText}\n\n` +
             `🎁 Daily bonus available!\n` +
             `💵 Top up balance easily!\n` +
             `🧮 Use calculator for pricing\n` +
@@ -3314,7 +3352,6 @@ else if (data.startsWith('claim_gift_')) {
             const balance = getBalance(userId);
             const accountStock = getAccountStock();
             const available = accountStock.accounts?.length || 0;
-            const canBuy = available > 0 && balance >= ACCOUNT_PRICE_IDR;
 
             const keyboard = {
                 inline_keyboard: [
@@ -3393,7 +3430,7 @@ else if (data.startsWith('claim_gift_')) {
             updatedUsers[userId].completed_orders = (updatedUsers[userId].completed_orders || 0) + 1;
             saveJSON(USERS_FILE, updatedUsers);
 
-            const delivery = await deliverAccount(userId, orderId);
+            const delivery = await deliverAccounts(userId, orderId, 1);
             const newBalance = getBalance(userId);
 
             if (delivery.success) {
@@ -3584,8 +3621,10 @@ else if (data.startsWith('claim_gift_')) {
         
         else if (data === 'check_stock') {
             const stock = getStock();
+            const accountStock = getAccountStock();
+            const accountAvailable = accountStock.accounts?.length || 0;
             const pricing = getPricing();
-            const pricingText = Object.keys(pricing).map(range => 
+            const pricingText = Object.keys(pricing).map(range =>
                 `• ${range}: Rp ${formatIDR(pricing[range])}`
             ).join('\n');
             
@@ -3598,7 +3637,8 @@ else if (data.startsWith('claim_gift_')) {
             
             bot.editMessageText(
                 `📦 *STOCK AVAILABLE*\n\n` +
-                `Available: ${stock.current_stock} links\n\n` +
+                `Links available: ${stock.links?.length || 0}\n` +
+                `Accounts available: ${accountAvailable}\n\n` +
                 `💰 Current Prices:\n` +
                 `${pricingText}\n\n` +
                 `🎟️ Use coupon codes for extra discounts!`,
@@ -4697,7 +4737,126 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             bot.sendMessage(chatId, `✅ Display stock updated to ${quantity}!`).catch(() => {});
             delete userStates[chatId];
         }
-        
+
+        // Account quantity input
+        else if (state.state === 'awaiting_account_quantity') {
+            const quantity = parseInt(text);
+            const accountStock = getAccountStock();
+            const available = accountStock.accounts?.length || 0;
+
+            if (isNaN(quantity) || quantity < 1) {
+                bot.sendMessage(chatId, '❌ Please send a valid number!').catch(() => {});
+                return;
+            }
+
+            if (quantity > available) {
+                bot.sendMessage(chatId, `❌ Only ${available} account(s) available right now!`).catch(() => {});
+                return;
+            }
+
+            const totalPrice = quantity * ACCOUNT_PRICE_IDR;
+            const balance = getBalance(userId);
+
+            if (balance < totalPrice) {
+                const shortfall = totalPrice - balance;
+
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: '💵 Top Up via QRIS/Links', callback_data: 'topup_balance' }],
+                        [{ text: '🔙 Back', callback_data: 'buy_account' }]
+                    ]
+                };
+
+                bot.sendMessage(chatId,
+                    `⚠️ Balance not enough.\n\n` +
+                    `Requested: ${quantity} account(s)\n` +
+                    `Total needed: Rp ${formatIDR(totalPrice)}\n` +
+                    `Current balance: Rp ${formatIDR(balance)}\n` +
+                    `Shortfall: Rp ${formatIDR(shortfall)}\n\n` +
+                    `Top up with QRIS/links then try again.`,
+                    { parse_mode: 'Markdown', reply_markup: keyboard }
+                ).catch(() => {});
+                return;
+            }
+
+            updateBalance(userId, -totalPrice);
+
+            const orderId = getNextOrderId();
+            const users = getUsers();
+            const order = {
+                order_id: orderId,
+                user_id: userId,
+                username: users[userId]?.username || msg.from.username || 'unknown',
+                quantity: quantity,
+                total_quantity: quantity,
+                original_price: ACCOUNT_PRICE_IDR,
+                total_price: totalPrice,
+                status: 'completed',
+                payment_method: 'balance',
+                date: new Date().toISOString(),
+                completed_at: new Date().toISOString(),
+                product: 'account'
+            };
+
+            addOrder(order);
+
+            if (!users[userId]) {
+                addUser(userId, msg.from);
+            }
+
+            const updatedUsers = getUsers();
+            updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+            updatedUsers[userId].completed_orders = (updatedUsers[userId].completed_orders || 0) + 1;
+            saveJSON(USERS_FILE, updatedUsers);
+
+            const delivery = await deliverAccounts(userId, orderId, quantity);
+            const newBalance = getBalance(userId);
+
+            if (delivery.success) {
+                bot.sendMessage(
+                    chatId,
+                    `✅ *ACCOUNTS PURCHASED!*\n\n` +
+                    `📋 Order: #${orderId}\n` +
+                    `🔢 Quantity: ${quantity}\n` +
+                    `💵 Paid: Rp ${formatIDR(totalPrice)}\n` +
+                    `💳 Balance left: Rp ${formatIDR(newBalance)}\n\n` +
+                    `🔑 Credentials sent above.`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
+                            ]
+                        }
+                    }
+                ).catch(() => {});
+
+                bot.sendMessage(ADMIN_TELEGRAM_ID,
+                    `🆕 *ACCOUNT SALE*\n\n` +
+                    `User: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')} (${userId})\n` +
+                    `Order: #${orderId}\n` +
+                    `Qty: ${quantity}\n` +
+                    `Total: Rp ${formatIDR(totalPrice)}\n` +
+                    `Remaining accounts: ${(getAccountStock().accounts || []).length}`,
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+            } else {
+                updateBalance(userId, totalPrice);
+                updateOrder(orderId, { status: 'failed' });
+
+                bot.sendMessage(
+                    chatId,
+                    `❌ *DELIVERY FAILED*\n\n` +
+                    `Order: #${orderId}\n` +
+                    `Your payment has been refunded.\n\n` +
+                    `Please contact ${ADMIN_USERNAME} for help.`,
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+            }
+
+            delete userStates[chatId];
+        }
+
         // Order quantity input
         else if (state.state === 'awaiting_order_quantity') {
             const quantity = parseInt(text);
