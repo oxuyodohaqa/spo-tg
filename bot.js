@@ -1581,10 +1581,7 @@ bot.onText(/\/start/, (msg) => {
                         { text: '🎁 Create Gift', callback_data: 'admin_create_gift' },
                         { text: '📋 View Gifts', callback_data: 'admin_view_gifts' }
                     ],
-                    [
-                        { text: '📥 Get Test Links', callback_data: 'admin_get_links' },
-                        { text: '🛍️ Custom Buttons', callback_data: 'admin_custom_content' }
-                    ],
+                    [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }],
                     [
                         { text: '📢 Broadcast', callback_data: 'admin_broadcast' }
                     ]
@@ -1616,9 +1613,6 @@ bot.onText(/\/start/, (msg) => {
         const balance = getBalance(userId);
         const stock = getStock();
         const pricing = getPricing();
-        const customContent = getCustomContent();
-        const customButtons = customContent.buttons || [];
-        const hasCustomProducts = (customContent.products || []).length > 0;
         const pricingText = Object.keys(pricing).slice(0, 3).map(range =>
             `• ${range}: Rp ${formatIDR(pricing[range])}`
         ).join('\n');
@@ -1634,7 +1628,6 @@ bot.onText(/\/start/, (msg) => {
                 [{ text: '📦 Stock', callback_data: 'check_stock' }],
                 [{ text: '📝 My Orders', callback_data: 'my_orders' }],
                 [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
-                ...chunkCustomButtons(customButtons)
             ]
         };
         
@@ -3742,9 +3735,6 @@ else if (data.startsWith('claim_gift_')) {
             const balance = getBalance(userId);
             const stock = getStock();
             const pricing = getPricing();
-            const customContent = getCustomContent();
-            const customButtons = customContent.buttons || [];
-            const hasCustomProducts = (customContent.products || []).length > 0;
             const pricingText = Object.keys(pricing).slice(0, 3).map(range =>
                 `• ${range}: Rp ${formatIDR(pricing[range])}`
             ).join('\n');
@@ -3761,7 +3751,6 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '📦 Stock', callback_data: 'check_stock' }],
                     [{ text: '📝 My Orders', callback_data: 'my_orders' }],
                     [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
-                    ...chunkCustomButtons(customButtons)
                 ]
             };
 
@@ -3791,7 +3780,7 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '🎁 Bonuses', callback_data: 'admin_bonuses' }],
                     [{ text: '📱 GoPay', callback_data: 'admin_qris' }, { text: '🛒 Custom Order', callback_data: 'admin_custom_order' }],
                     [{ text: '📋 Pending Top-ups', callback_data: 'admin_pending_topups' }, { text: '💰 Add Balance', callback_data: 'admin_add_balance' }],
-                    [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }, { text: '🛍️ Custom Buttons', callback_data: 'admin_custom_content' }],
+                    [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }],
                     [{ text: '📢 Broadcast', callback_data: 'admin_broadcast' }]
                 ]
             };
