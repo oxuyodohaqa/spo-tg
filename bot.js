@@ -3353,28 +3353,40 @@ else if (data.startsWith('claim_gift_')) {
             const accountStock = getAccountStock();
             const available = accountStock.accounts?.length || 0;
 
+            if (available === 0) {
+                delete userStates[chatId];
+
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                    ]
+                };
+
+                bot.editMessageText(
+                    `❌ *ACCOUNTS OUT OF STOCK*\n\n` +
+                    `Please check back later after the admin adds more accounts.`,
+                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+                ).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = { state: 'awaiting_account_quantity', userId: userId };
+
             const keyboard = {
                 inline_keyboard: [
-                    [{ text: `🛒 Order Account (Rp ${formatIDR(ACCOUNT_PRICE_IDR)})`, callback_data: 'confirm_buy_account' }],
                     [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                     [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
 
-            const statusLine = available === 0
-                ? '❌ Out of stock! Add more accounts first.'
-                : canBuy
-                    ? '✅ Ready to deliver instantly!'
-                    : '⚠️ Not enough balance. Please top up.';
-
             bot.editMessageText(
-                `🔑 *BUY VERIFIED ACCOUNT*\n\n` +
-                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\n` +
-                `📦 Accounts available: ${available}\n\n` +
-                `💳 Your balance: Rp ${formatIDR(balance)}\n` +
-                `${statusLine}\n\n` +
-                `⚡ Delivery includes access (generator.email / domain) and thank-you message.`,
+                `🔑 *BUY VERIFIED ACCOUNTS*\n\n` +
+                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} per account (same price for bulk)\n` +
+                `📦 Accounts available: ${available}\n` +
+                `💳 Your balance: Rp ${formatIDR(balance)}\n\n` +
+                `👉 Send how many accounts you want (1-${available}).\n` +
+                `⚡ Payment uses balance only.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -3392,87 +3404,25 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            if (balance < ACCOUNT_PRICE_IDR) {
-                bot.answerCallbackQuery(query.id, {
-                    text: '❌ Not enough balance! Top up first.',
-                    show_alert: true
-                }).catch(() => {});
-                return;
-            }
+            userStates[chatId] = { state: 'awaiting_account_quantity', userId: userId };
 
-            updateBalance(userId, -ACCOUNT_PRICE_IDR);
-
-            const orderId = getNextOrderId();
-            const users = getUsers();
-            const order = {
-                order_id: orderId,
-                user_id: userId,
-                username: users[userId]?.username || query.from.username || 'unknown',
-                quantity: 1,
-                total_quantity: 1,
-                original_price: ACCOUNT_PRICE_IDR,
-                total_price: ACCOUNT_PRICE_IDR,
-                status: 'completed',
-                payment_method: 'balance',
-                date: new Date().toISOString(),
-                completed_at: new Date().toISOString(),
-                product: 'account'
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
+                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
             };
 
-            addOrder(order);
-
-            if (!users[userId]) {
-                addUser(userId, query.from);
-            }
-
-            const updatedUsers = getUsers();
-            updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
-            updatedUsers[userId].completed_orders = (updatedUsers[userId].completed_orders || 0) + 1;
-            saveJSON(USERS_FILE, updatedUsers);
-
-            const delivery = await deliverAccounts(userId, orderId, 1);
-            const newBalance = getBalance(userId);
-
-            if (delivery.success) {
-                bot.editMessageText(
-                    `✅ *ACCOUNT PURCHASED!*\\n\\n` +
-                    `📋 Order: #${orderId}\\n` +
-                    `💵 Paid: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}\\n` +
-                    `💳 Balance left: Rp ${formatIDR(newBalance)}\\n\\n` +
-                    `🔑 Credentials sent in a separate message.`,
-                    {
-                        chat_id: chatId,
-                        message_id: messageId,
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
-                                [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
-                            ]
-                        }
-                    }
-                ).catch(() => {});
-
-                bot.sendMessage(ADMIN_TELEGRAM_ID,
-                    `🆕 *ACCOUNT SOLD*\\n\\n` +
-                    `User: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')} (${userId})\\n` +
-                    `Order: #${orderId}\\n` +
-                    `Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}\\n` +
-                    `Remaining accounts: ${(getAccountStock().accounts || []).length}`,
-                    { parse_mode: 'Markdown' }
-                ).catch(() => {});
-            } else {
-                updateBalance(userId, ACCOUNT_PRICE_IDR);
-                updateOrder(orderId, { status: 'failed' });
-
-                bot.editMessageText(
-                    `❌ *DELIVERY FAILED*\\n\\n` +
-                    `Order: #${orderId}\\n` +
-                    `Your payment has been refunded.\\n\\n` +
-                    `Please contact ${ADMIN_USERNAME} for help.`,
-                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-                ).catch(() => {});
-            }
+            bot.editMessageText(
+                `🔑 *BUY VERIFIED ACCOUNTS*\n\n` +
+                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} per account (same price for bulk)\n` +
+                `📦 Accounts available: ${available}\n` +
+                `💳 Your balance: Rp ${formatIDR(balance)}\n\n` +
+                `👉 Send how many accounts you want (1-${available}).\n` +
+                `⚡ Payment uses balance only.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
         }
 
         else if (data === 'order') {
@@ -4762,7 +4712,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
 
                 const keyboard = {
                     inline_keyboard: [
-                        [{ text: '💵 Top Up via QRIS/Links', callback_data: 'topup_balance' }],
+                        [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                         [{ text: '🔙 Back', callback_data: 'buy_account' }]
                     ]
                 };
@@ -4773,7 +4723,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                     `Total needed: Rp ${formatIDR(totalPrice)}\n` +
                     `Current balance: Rp ${formatIDR(balance)}\n` +
                     `Shortfall: Rp ${formatIDR(shortfall)}\n\n` +
-                    `Top up with QRIS/links then try again.`,
+                    `Top up your balance then try again.`,
                     { parse_mode: 'Markdown', reply_markup: keyboard }
                 ).catch(() => {});
                 return;
