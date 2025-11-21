@@ -111,6 +111,11 @@ function escapeMarkdown(text) {
         .replace(/\./g, '\\.');
 }
 
+function escapeInlineCode(text) {
+    if (!text) return '';
+    return String(text).replace(/`/g, '\\`');
+}
+
 function loadJSON(filename, defaultValue = {}) {
     try {
         if (fs.existsSync(filename)) {
