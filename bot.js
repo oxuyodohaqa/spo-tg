@@ -3777,7 +3777,7 @@ else if (data.startsWith('claim_gift_')) {
                     `🎉 *Welcome Back!*\n\n` +
                     `Hi ${escapeMarkdown(query.from.first_name)}! 👋\n\n` +
                     `💳 Balance: Rp ${formatIDR(balance)}\n` +
-                    `🔑 Verified Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (balance only)\n` +
+                    `🔑 Verified Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}\n` +
                     `📦 Stock: ${stock.current_stock} links\n\n` +
                     `💰 Prices:\n${pricingText}${bonusText}`,
                     { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
