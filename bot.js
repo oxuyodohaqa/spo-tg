@@ -43,6 +43,7 @@ const TOPUPS_FILE = 'topups.json';
 const GIFT_MESSAGES_FILE = 'gift_messages.json';
 const BONUSES_FILE = 'bonuses.json';
 const ACCOUNTS_FILE = 'accounts.json';
+const CUSTOM_CONTENT_FILE = 'custom_content.json';
 
 // Default pricing
 const DEFAULT_PRICING = {
@@ -215,6 +216,27 @@ function updateStock(quantity, links = null) {
             }).catch(() => {});
         }, 2000);
     }
+}
+
+function getCustomContent() {
+    const content = loadJSON(CUSTOM_CONTENT_FILE, { products: [], buttons: [] });
+    return {
+        products: Array.isArray(content.products) ? content.products : [],
+        buttons: Array.isArray(content.buttons) ? content.buttons : []
+    };
+}
+
+function saveCustomContent(content) {
+    const normalized = {
+        products: Array.isArray(content.products) ? content.products : [],
+        buttons: Array.isArray(content.buttons) ? content.buttons : []
+    };
+    saveJSON(CUSTOM_CONTENT_FILE, normalized);
+}
+
+function chunkCustomButtons(buttons = []) {
+    if (!Array.isArray(buttons) || buttons.length === 0) return [];
+    return buttons.map(btn => [{ text: btn.label, url: btn.url }]);
 }
 
 function getOrders() {
