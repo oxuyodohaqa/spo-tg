@@ -43,6 +43,7 @@ const TOPUPS_FILE = 'topups.json';
 const GIFT_MESSAGES_FILE = 'gift_messages.json';
 const BONUSES_FILE = 'bonuses.json';
 const ACCOUNTS_FILE = 'accounts.json';
+const CUSTOM_CONTENT_FILE = 'custom_content.json';
 
 // Default pricing
 const DEFAULT_PRICING = {
@@ -215,6 +216,27 @@ function updateStock(quantity, links = null) {
             }).catch(() => {});
         }, 2000);
     }
+}
+
+function getCustomContent() {
+    const content = loadJSON(CUSTOM_CONTENT_FILE, { products: [], buttons: [] });
+    return {
+        products: Array.isArray(content.products) ? content.products : [],
+        buttons: Array.isArray(content.buttons) ? content.buttons : []
+    };
+}
+
+function saveCustomContent(content) {
+    const normalized = {
+        products: Array.isArray(content.products) ? content.products : [],
+        buttons: Array.isArray(content.buttons) ? content.buttons : []
+    };
+    saveJSON(CUSTOM_CONTENT_FILE, normalized);
+}
+
+function chunkCustomButtons(buttons = []) {
+    if (!Array.isArray(buttons) || buttons.length === 0) return [];
+    return buttons.map(btn => [{ text: btn.label, url: btn.url }]);
 }
 
 function getOrders() {
@@ -2964,6 +2986,101 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        else if (data === 'admin_custom_content') {
+            if (!isAdmin(userId)) return;
+
+            const customContent = getCustomContent();
+            const productsCount = (customContent.products || []).length;
+            const buttonsCount = (customContent.buttons || []).length;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [
+                        { text: '➕ Add Product', callback_data: 'admin_add_custom_product' },
+                        { text: '🔗 Add Custom Button', callback_data: 'admin_add_custom_button' }
+                    ],
+                    [{ text: '🗑️ Manage Buttons', callback_data: 'admin_manage_custom_buttons' }],
+                    [{ text: '👀 Preview User View', callback_data: 'custom_products' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🛍️ *CUSTOM BUTTONS & PRODUCTS*\n\n` +
+                `• Products: ${productsCount}\n` +
+                `• Extra buttons: ${buttonsCount}\n\n` +
+                `Use the options below to add new entries or preview how users see them.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+        else if (data === 'admin_manage_custom_buttons') {
+            if (!isAdmin(userId)) return;
+
+            const customContent = getCustomContent();
+            const hasButtons = (customContent.buttons || []).length > 0;
+            const keyboard = buildCustomButtonsManager(customContent);
+
+            bot.editMessageText(
+                `🗑️ *MANAGE CUSTOM BUTTONS*\n\n` +
+                `${hasButtons ? 'Tap a button to remove it.' : 'No custom buttons yet.'}`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'admin_add_custom_product') {
+            if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_custom_product' };
+
+            bot.sendMessage(chatId,
+                `➕ *ADD CUSTOM PRODUCT*\n\n` +
+                `Send details in one line using pipes (|):\n` +
+                `Title | Price | Description | Button Text | Button URL\n\n` +
+                `Example:\nPremium Panel | 25000 | Lifetime access | Buy Now | https://example.com`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'admin_add_custom_button') {
+            if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_custom_button' };
+
+            bot.sendMessage(chatId,
+                `🔗 *ADD CUSTOM BUTTON*\n\n` +
+                `Send in this format:\n` +
+                `Button text | https://link`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+        else if (data.startsWith('remove_custom_button:')) {
+            if (!isAdmin(userId)) return;
+
+            const buttonId = data.replace('remove_custom_button:', '');
+            const content = getCustomContent();
+            const beforeCount = (content.buttons || []).length;
+            content.buttons = (content.buttons || []).filter(btn => `${btn.id}` !== buttonId);
+
+            if (beforeCount === content.buttons.length) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ Button not found',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            saveCustomContent(content);
+
+            const keyboard = buildCustomButtonsManager(content);
+            const hasButtons = content.buttons.length > 0;
+
+            bot.editMessageText(
+                `🗑️ *MANAGE CUSTOM BUTTONS*\n\n` +
+                `${hasButtons ? '✅ Button removed. Tap another to delete.' : '✅ Button removed. No custom buttons left.'}`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+        
         else if (data === 'upload_stock_instruction') {
             if (!isAdmin(userId)) return;
 
@@ -4443,6 +4560,71 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             bot.sendMessage(chatId,
                 `✅ *PRICING UPDATED!*\n\n` +
                 `${pricingText}`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+
+            delete userStates[chatId];
+        }
+        else if (state.state === 'awaiting_custom_product' && isAdmin(userId)) {
+            const parts = text.split('|').map(p => p.trim()).filter(Boolean);
+
+            if (parts.length < 3) {
+                bot.sendMessage(chatId,
+                    '❌ Invalid format! Use: Title | Price | Description | Button Text | Button URL'
+                ).catch(() => {});
+                return;
+            }
+
+            const [title, priceRaw, description, buttonLabel, buttonUrl] = parts;
+            const price = parseInt(priceRaw.replace(/\D/g, '')) || 0;
+
+            const content = getCustomContent();
+            const product = {
+                id: Date.now(),
+                title,
+                price,
+                description,
+                button_label: buttonLabel || null,
+                button_url: buttonUrl || null
+            };
+
+            content.products = [...(content.products || []), product];
+            saveCustomContent(content);
+
+            bot.sendMessage(chatId,
+                `✅ *CUSTOM PRODUCT SAVED*\n\n` +
+                `• ${escapeMarkdown(title)} — Rp ${formatIDR(price)}\n` +
+                `${description ? `📝 ${escapeMarkdown(description)}` : ''}`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+
+            delete userStates[chatId];
+        }
+        else if (state.state === 'awaiting_custom_button' && isAdmin(userId)) {
+            const parts = text.split('|').map(p => p.trim()).filter(Boolean);
+
+            if (parts.length < 2) {
+                bot.sendMessage(chatId, '❌ Invalid format! Use: Button text | https://link').catch(() => {});
+                return;
+            }
+
+            const [label, url] = parts;
+            if (!url.startsWith('http')) {
+                bot.sendMessage(chatId, '❌ URL must start with http/https!').catch(() => {});
+                return;
+            }
+
+            const content = getCustomContent();
+            content.buttons = [
+                ...(content.buttons || []),
+                { id: `${Date.now()}_${Math.floor(Math.random() * 1000)}`, label, url }
+            ];
+            saveCustomContent(content);
+
+            bot.sendMessage(chatId,
+                `✅ *BUTTON ADDED*\n\n` +
+                `• ${escapeMarkdown(label)}\n` +
+                `${url}`,
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
 
