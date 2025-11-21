@@ -1525,6 +1525,7 @@ bot.onText(/\/start/, (msg) => {
                         { text: '📦 Stock', callback_data: 'admin_stock' }
                     ],
                     [
+                        { text: '🔑 Accounts', callback_data: 'admin_accounts' },
                         { text: '💵 Pricing', callback_data: 'admin_pricing' },
                         { text: '🎟️ Coupons', callback_data: 'admin_coupons' }
                     ],
@@ -1552,6 +1553,7 @@ bot.onText(/\/start/, (msg) => {
             const users = getUsers();
             const orders = getOrders();
             const stock = getStock();
+            const accountStock = getAccountStock();
             const pendingTopups = getPendingTopups();
             
             bot.sendMessage(chatId, 
@@ -1562,6 +1564,7 @@ bot.onText(/\/start/, (msg) => {
                 `• Orders: ${orders.length}\n` +
                 `• Stock: ${stock.current_stock}\n` +
                 `• Links: ${stock.links.length}\n` +
+                `• Accounts: ${accountStock.accounts?.length || 0}\n` +
                 `• Pending Top-ups: ${pendingTopups.length}\n\n` +
                 `📅 ${getCurrentDateTime()}`,
                 { parse_mode: 'Markdown', reply_markup: keyboard }
@@ -1863,9 +1866,16 @@ bot.on('document', (msg) => {
     try {
         const chatId = msg.chat.id;
         const userId = msg.from.id;
-        
+
         if (!isAdmin(userId)) return;
-        
+
+        const state = userStates[chatId];
+        const uploadMode = state?.state;
+        const isAccountUpload = uploadMode === 'awaiting_account_upload';
+        const isLinkUpload = uploadMode === 'awaiting_stock_upload' || !uploadMode;
+
+        if (!isAccountUpload && !isLinkUpload) return;
+
         const document = msg.document;
         
         if (!document.file_name.endsWith('.txt')) {
@@ -1873,7 +1883,9 @@ bot.on('document', (msg) => {
             return;
         }
         
-        bot.sendMessage(chatId, '⏳ Uploading links...').then(statusMsg => {
+        const uploadingText = isAccountUpload ? '⏳ Uploading accounts...' : '⏳ Uploading links...';
+
+        bot.sendMessage(chatId, uploadingText).then(statusMsg => {
             bot.getFile(document.file_id).then(file => {
                 const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
                 
@@ -1882,29 +1894,59 @@ bot.on('document', (msg) => {
                     let data = '';
                     res.on('data', chunk => data += chunk);
                     res.on('end', () => {
-                        const links = data.split('\n')
-                            .map(l => l.trim())
-                            .filter(l => l.length > 0 && l.startsWith('http'));
-                        
+                        const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+                        if (isAccountUpload) {
+                            if (lines.length === 0) {
+                                bot.editMessageText(
+                                    '❌ No valid accounts found! Add one credential per line.',
+                                    { chat_id: chatId, message_id: statusMsg.message_id }
+                                ).catch(() => {});
+                                delete userStates[chatId];
+                                return;
+                            }
+
+                            const accountStock = getAccountStock();
+                            const merged = [...(accountStock.accounts || []), ...lines];
+                            updateAccountStock(merged);
+
+                            bot.editMessageText(
+                                `✅ *ACCOUNTS UPLOADED!*\n\n` +
+                                `📤 Added: ${lines.length} accounts\n` +
+                                `🔑 Total Accounts: ${merged.length}\n\n` +
+                                `Thank you!`,
+                                {
+                                    chat_id: chatId,
+                                    message_id: statusMsg.message_id,
+                                    parse_mode: 'Markdown'
+                                }
+                            ).catch(() => {});
+
+                            delete userStates[chatId];
+                            return;
+                        }
+
+                        const links = lines.filter(l => l.startsWith('http'));
+
                         if (links.length === 0) {
                             bot.editMessageText(
                                 '❌ No valid links found!\n\nLinks must start with http',
                                 { chat_id: chatId, message_id: statusMsg.message_id }
                             ).catch(() => {});
+                            delete userStates[chatId];
                             return;
                         }
-                        
+
                         const stock = getStock();
-                        const previousStock = stock.current_stock;
-                        
+
                         links.forEach(link => stock.links.push(link));
-                        
+
                         const newCount = stock.links.length;
                         const newStock = stock.current_stock + links.length;
                         const stockAdded = links.length;
-                        
+
                         updateStock(newStock, stock.links);
-                        
+
                         bot.editMessageText(
                             `✅ *UPLOAD SUCCESS!*\n\n` +
                             `📤 Added: ${links.length} links\n` +
@@ -1912,12 +1954,14 @@ bot.on('document', (msg) => {
                             `📊 Display Stock: ${newStock}\n\n` +
                             `${stockAdded >= AUTO_BROADCAST_MIN_STOCK ? `📢 Auto-broadcasting to all users...\n\n` : ''}` +
                             `✅ Complete!`,
-                            { 
-                                chat_id: chatId, 
+                            {
+                                chat_id: chatId,
                                 message_id: statusMsg.message_id,
                                 parse_mode: 'Markdown'
                             }
                         ).catch(() => {});
+
+                        delete userStates[chatId];
                     });
                 }).on('error', (err) => {
                     console.error('Download error:', err.message);
@@ -2906,6 +2950,8 @@ else if (data.startsWith('claim_gift_')) {
         
         else if (data === 'upload_stock_instruction') {
             if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_stock_upload' };
             
             bot.sendMessage(chatId,
                 `📤 *UPLOAD STOCK*\n\n` +
@@ -2916,6 +2962,56 @@ else if (data.startsWith('claim_gift_')) {
                 `💡 Auto-broadcast if 50+ links added!`,
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
+        }
+
+        else if (data === 'admin_accounts') {
+            if (!isAdmin(userId)) return;
+
+            const accountStock = getAccountStock();
+            const available = accountStock.accounts?.length || 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '📤 Upload Accounts File', callback_data: 'upload_account_instruction' }],
+                    [{ text: '📊 Check Account Stock', callback_data: 'check_account_stock' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🔑 *ACCOUNT INVENTORY*\n\n` +
+                `📦 Accounts available: ${available}\n\n` +
+                `Use the options below to upload or check stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'upload_account_instruction') {
+            if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_account_upload' };
+
+            bot.sendMessage(chatId,
+                `📤 *UPLOAD VERIFIED ACCOUNTS*\n\n` +
+                `Send a .txt file now with one credential per line.\n\n` +
+                `Example:\n` +
+                `email:password\n` +
+                `user|pass` +
+                `\n\nKeep each account on its own line.`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'check_account_stock') {
+            if (!isAdmin(userId)) return;
+
+            const accountStock = getAccountStock();
+            const available = accountStock.accounts?.length || 0;
+
+            bot.answerCallbackQuery(query.id, {
+                text: `📦 Accounts available: ${available}`,
+                show_alert: true
+            }).catch(() => {});
         }
         
         else if (data === 'update_display_stock') {
