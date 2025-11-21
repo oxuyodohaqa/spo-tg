@@ -3355,8 +3355,8 @@ else if (data.startsWith('claim_gift_')) {
 
             const keyboard = {
                 inline_keyboard: [
-                    [{ text: '🛒 Order Accounts', callback_data: 'order_accounts' }],
-                    [{ text: '💵 Top Up via QRIS/Links', callback_data: 'topup_balance' }],
+                    [{ text: `🛒 Order Account (Rp ${formatIDR(ACCOUNT_PRICE_IDR)})`, callback_data: 'confirm_buy_account' }],
+                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                     [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
@@ -3364,9 +3364,9 @@ else if (data.startsWith('claim_gift_')) {
 
             const statusLine = available === 0
                 ? '❌ Out of stock! Add more accounts first.'
-                : balance >= ACCOUNT_PRICE_IDR
-                    ? '✅ Order now — balance auto-deducts.'
-                    : '⚠️ Order now, then top up to auto-complete.';
+                : canBuy
+                    ? '✅ Ready to deliver instantly!'
+                    : '⚠️ Not enough balance. Please top up.';
 
             bot.editMessageText(
                 `🔑 *BUY VERIFIED ACCOUNT*\n\n` +
@@ -3374,42 +3374,7 @@ else if (data.startsWith('claim_gift_')) {
                 `📦 Accounts available: ${available}\n\n` +
                 `💳 Your balance: Rp ${formatIDR(balance)}\n` +
                 `${statusLine}\n\n` +
-                `📦 What you get:\n` +
-                `• Spotify verified login + password\n` +
-                `• Inbox access for verification (email provided)\n\n` +
-                `🛒 How to order (same as links, fixed price):\n` +
-                `1) Tap *Order Accounts* and choose quantity (1 or more)\n` +
-                `2) Balance auto-deducts on delivery — top up with QRIS/links if short\n` +
-                `3) No coupons needed; price stays Rp ${formatIDR(ACCOUNT_PRICE_IDR)} each`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
-        }
-
-        else if (data === 'order_accounts') {
-            const accountStock = getAccountStock();
-            const available = accountStock.accounts?.length || 0;
-
-            if (available === 0) {
-                bot.answerCallbackQuery(query.id, {
-                    text: '❌ No accounts in stock!',
-                    show_alert: true
-                }).catch(() => {});
-                return;
-            }
-
-            const keyboard = {
-                inline_keyboard: [
-                    [{ text: '🔙 Back', callback_data: 'buy_account' }]
-                ]
-            };
-
-            userStates[chatId] = { state: 'awaiting_account_quantity', userId };
-
-            bot.editMessageText(
-                `📝 *ORDER VERIFIED ACCOUNTS*\n\n` +
-                `📦 Available: ${available}\n` +
-                `💵 Fixed price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} each\n\n` +
-                `Enter how many accounts you want (1-${available}).`,
+                `⚡ Delivery includes access (generator.email / domain) and thank-you message.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
