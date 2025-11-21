@@ -27,6 +27,7 @@ const ACCOUNT_MESSAGE_LIMIT = 20;
 const AUTO_BROADCAST_MIN_STOCK = 50;
 const MIN_TOPUP_AMOUNT = 0;
 const MAX_TOPUP_AMOUNT = 100000;
+const ACCOUNT_PRICE_IDR = 650;
 
 // File paths
 const ORDERS_FILE = 'orders.json';
@@ -42,6 +43,7 @@ const PENDING_PAYMENTS_FILE = 'pending_payments.json';
 const TOPUPS_FILE = 'topups.json';
 const GIFT_MESSAGES_FILE = 'gift_messages.json';
 const BONUSES_FILE = 'bonuses.json';
+const ACCOUNTS_FILE = 'accounts.json';
 
 // Default pricing
 const DEFAULT_PRICING = {
@@ -159,6 +161,14 @@ function getNextTopupId() {
 
 function getStock() {
     return loadJSON(STOCK_FILE, { current_stock: 0, links: [] });
+}
+
+function getAccountStock() {
+    return loadJSON(ACCOUNTS_FILE, { accounts: [] });
+}
+
+function updateAccountStock(accounts = []) {
+    saveJSON(ACCOUNTS_FILE, { accounts });
 }
 
 function updateStock(quantity, links = null) {
@@ -926,6 +936,37 @@ async function deliverlinks(userId, orderId, quantity, bonusQuantity = 0) {
     } catch (error) {
         console.error('Error delivering links:', error.message);
         return false;
+    }
+}
+
+async function deliverAccount(userId, orderId = 'N/A') {
+    try {
+        const accountStock = getAccountStock();
+
+        if (!accountStock.accounts || accountStock.accounts.length === 0) {
+            return { success: false, message: '❌ No accounts available to deliver!' };
+        }
+
+        const nextAccount = accountStock.accounts.shift();
+        updateAccountStock(accountStock.accounts);
+
+        const safeAccount = escapeMarkdown(nextAccount);
+
+        const message =
+            `✅ *ACCOUNT DELIVERED!*\n\n` +
+            `📋 Order #: ${orderId}\n` +
+            `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\n\n` +
+            `🔑 Credentials:\n\`${safeAccount}\`\n\n` +
+            `🌐 Access: generator.email / omanin\n` +
+            `📱 Support: ${ADMIN_USERNAME}\n\n` +
+            `Thank you! 🙏`;
+
+        await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
+
+        return { success: true, delivered: nextAccount };
+    } catch (error) {
+        console.error('Error delivering account:', error.message);
+        return { success: false, message: '❌ Failed to deliver account.' };
     }
 }
 
@@ -3641,6 +3682,38 @@ else if (data.startsWith('claim_gift_')) {
         
     } catch (error) {
         console.error('Error in callback query:', error.message);
+    }
+});
+
+// ============================================
+// ADMIN COMMANDS
+// ============================================
+
+bot.onText(/\/deliver_account\s+(\d+)(?:\s+(\d+))?/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+
+    if (!isAdmin(userId)) return;
+
+    const targetUserId = parseInt(match[1]);
+    const orderId = match[2] ? parseInt(match[2]) : 'manual';
+
+    if (isNaN(targetUserId)) {
+        bot.sendMessage(chatId, '❌ Please provide a valid user ID!').catch(() => {});
+        return;
+    }
+
+    const result = await deliverAccount(targetUserId, orderId);
+
+    if (result.success) {
+        bot.sendMessage(chatId,
+            `✅ Account sent to user ${targetUserId}!\n\n` +
+            `📋 Order #: ${orderId}\n` +
+            `🔑 Delivered: ${result.delivered}`,
+            { parse_mode: 'Markdown' }
+        ).catch(() => {});
+    } else {
+        bot.sendMessage(chatId, result.message || '❌ Failed to deliver account.').catch(() => {});
     }
 });
 
