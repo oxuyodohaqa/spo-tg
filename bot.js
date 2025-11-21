@@ -962,7 +962,7 @@ function broadcastNewCoupon(couponData) {
 
 function broadcastRestock(quantity) {
     const pricing = getPricing();
-    const pricingText = Object.keys(pricing).slice(0, 4).map(range =>
+    const pricingText = Object.keys(pricing).slice(0, 4).map(range => 
         `• ${range}: Rp ${formatIDR(pricing[range])}/account`
     ).join('\n');
     
@@ -981,19 +981,6 @@ function broadcastRestock(quantity) {
         `🧮 Use calculator to check pricing!\n\n` +
         `⚡ Order now before stock runs out: /start`;
     
-    return broadcastToAll(message, { parse_mode: 'Markdown' });
-}
-
-function broadcastUpdateNotice(title, body) {
-    const cleanBody = body && body.trim().length > 0
-        ? body.trim()
-        : 'Stay tuned for more updates and deals!';
-
-    const message =
-        `🆕 *${title}*\n\n` +
-        `${cleanBody}\n\n` +
-        `⚡ Order now before promos end: /start`;
-
     return broadcastToAll(message, { parse_mode: 'Markdown' });
 }
 
@@ -2919,7 +2906,7 @@ else if (data.startsWith('claim_gift_')) {
                 `📦 Available: ${stock.links.length} links\n` +
                 `📊 Display Stock: ${stock.current_stock}\n\n` +
                 `💡 How many links do you need?\n\n` +
-                `📝 Send quantity (Max: ${Math.min(100, stock.links.length)})`,
+                `📝 Send quantity (Max: ${Math.min(10000, stock.links.length)})`,
                 { 
                     chat_id: chatId, 
                     message_id: messageId, 
@@ -4130,11 +4117,11 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             }
             
             updatePricing(newPricing);
-
-            const pricingText = Object.keys(newPricing).map(range =>
+            
+            const pricingText = Object.keys(newPricing).map(range => 
                 `• ${range}: Rp ${formatIDR(newPricing[range])}`
             ).join('\n');
-
+            
             bot.sendMessage(chatId,
                 `✅ *PRICING UPDATED!*\n\n` +
                 `${pricingText}`,
@@ -4277,8 +4264,8 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 return;
             }
             
-            if (quantity > 100) {
-                bot.sendMessage(chatId, '❌ Maximum 100 links at a time!').catch(() => {});
+            if (quantity > 10000) {
+                bot.sendMessage(chatId, '❌ Maximum 10000 links at a time!').catch(() => {});
                 return;
             }
             
