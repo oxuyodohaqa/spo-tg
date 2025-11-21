@@ -1559,10 +1559,7 @@ bot.onText(/\/start/, (msg) => {
                         { text: '🎁 Create Gift', callback_data: 'admin_create_gift' },
                         { text: '📋 View Gifts', callback_data: 'admin_view_gifts' }
                     ],
-                    [
-                        { text: '📥 Get Test Links', callback_data: 'admin_get_links' },
-                        { text: '🛍️ Custom Buttons', callback_data: 'admin_custom_content' }
-                    ],
+                    [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }],
                     [
                         { text: '📢 Broadcast', callback_data: 'admin_broadcast' }
                     ]
@@ -1594,9 +1591,6 @@ bot.onText(/\/start/, (msg) => {
         const balance = getBalance(userId);
         const stock = getStock();
         const pricing = getPricing();
-        const customContent = getCustomContent();
-        const customButtons = customContent.buttons || [];
-        const hasCustomProducts = (customContent.products || []).length > 0;
         const pricingText = Object.keys(pricing).slice(0, 3).map(range =>
             `• ${range}: Rp ${formatIDR(pricing[range])}`
         ).join('\n');
@@ -1612,7 +1606,6 @@ bot.onText(/\/start/, (msg) => {
                 [{ text: '📦 Stock', callback_data: 'check_stock' }],
                 [{ text: '📝 My Orders', callback_data: 'my_orders' }],
                 [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
-                ...chunkCustomButtons(customButtons)
             ]
         };
         
@@ -2971,60 +2964,6 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
-        else if (data === 'admin_custom_content') {
-            if (!isAdmin(userId)) return;
-
-            const customContent = getCustomContent();
-            const productsCount = (customContent.products || []).length;
-            const buttonsCount = (customContent.buttons || []).length;
-
-            const keyboard = {
-                inline_keyboard: [
-                    [
-                        { text: '➕ Add Product', callback_data: 'admin_add_custom_product' },
-                        { text: '🔗 Add Custom Button', callback_data: 'admin_add_custom_button' }
-                    ],
-                    [{ text: '👀 Preview User View', callback_data: 'custom_products' }],
-                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
-                ]
-            };
-
-            bot.editMessageText(
-                `🛍️ *CUSTOM BUTTONS & PRODUCTS*\n\n` +
-                `• Products: ${productsCount}\n` +
-                `• Extra buttons: ${buttonsCount}\n\n` +
-                `Use the options below to add new entries or preview how users see them.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
-        }
-
-        else if (data === 'admin_add_custom_product') {
-            if (!isAdmin(userId)) return;
-
-            userStates[chatId] = { state: 'awaiting_custom_product' };
-
-            bot.sendMessage(chatId,
-                `➕ *ADD CUSTOM PRODUCT*\n\n` +
-                `Send details in one line using pipes (|):\n` +
-                `Title | Price | Description | Button Text | Button URL\n\n` +
-                `Example:\nPremium Panel | 25000 | Lifetime access | Buy Now | https://example.com`,
-                { parse_mode: 'Markdown' }
-            ).catch(() => {});
-        }
-
-        else if (data === 'admin_add_custom_button') {
-            if (!isAdmin(userId)) return;
-
-            userStates[chatId] = { state: 'awaiting_custom_button' };
-
-            bot.sendMessage(chatId,
-                `🔗 *ADD CUSTOM BUTTON*\n\n` +
-                `Send in this format:\n` +
-                `Button text | https://link`,
-                { parse_mode: 'Markdown' }
-            ).catch(() => {});
-        }
-        
         else if (data === 'upload_stock_instruction') {
             if (!isAdmin(userId)) return;
 
@@ -3679,9 +3618,6 @@ else if (data.startsWith('claim_gift_')) {
             const balance = getBalance(userId);
             const stock = getStock();
             const pricing = getPricing();
-            const customContent = getCustomContent();
-            const customButtons = customContent.buttons || [];
-            const hasCustomProducts = (customContent.products || []).length > 0;
             const pricingText = Object.keys(pricing).slice(0, 3).map(range =>
                 `• ${range}: Rp ${formatIDR(pricing[range])}`
             ).join('\n');
@@ -3698,7 +3634,6 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '📦 Stock', callback_data: 'check_stock' }],
                     [{ text: '📝 My Orders', callback_data: 'my_orders' }],
                     [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
-                    ...chunkCustomButtons(customButtons)
                 ]
             };
 
@@ -3728,7 +3663,7 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '🎁 Bonuses', callback_data: 'admin_bonuses' }],
                     [{ text: '📱 GoPay', callback_data: 'admin_qris' }, { text: '🛒 Custom Order', callback_data: 'admin_custom_order' }],
                     [{ text: '📋 Pending Top-ups', callback_data: 'admin_pending_topups' }, { text: '💰 Add Balance', callback_data: 'admin_add_balance' }],
-                    [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }, { text: '🛍️ Custom Buttons', callback_data: 'admin_custom_content' }],
+                    [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }],
                     [{ text: '📢 Broadcast', callback_data: 'admin_broadcast' }]
                 ]
             };
@@ -4508,68 +4443,6 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             bot.sendMessage(chatId,
                 `✅ *PRICING UPDATED!*\n\n` +
                 `${pricingText}`,
-                { parse_mode: 'Markdown' }
-            ).catch(() => {});
-
-            delete userStates[chatId];
-        }
-        else if (state.state === 'awaiting_custom_product' && isAdmin(userId)) {
-            const parts = text.split('|').map(p => p.trim()).filter(Boolean);
-
-            if (parts.length < 3) {
-                bot.sendMessage(chatId,
-                    '❌ Invalid format! Use: Title | Price | Description | Button Text | Button URL'
-                ).catch(() => {});
-                return;
-            }
-
-            const [title, priceRaw, description, buttonLabel, buttonUrl] = parts;
-            const price = parseInt(priceRaw.replace(/\D/g, '')) || 0;
-
-            const content = getCustomContent();
-            const product = {
-                id: Date.now(),
-                title,
-                price,
-                description,
-                button_label: buttonLabel || null,
-                button_url: buttonUrl || null
-            };
-
-            content.products = [...(content.products || []), product];
-            saveCustomContent(content);
-
-            bot.sendMessage(chatId,
-                `✅ *CUSTOM PRODUCT SAVED*\n\n` +
-                `• ${escapeMarkdown(title)} — Rp ${formatIDR(price)}\n` +
-                `${description ? `📝 ${escapeMarkdown(description)}` : ''}`,
-                { parse_mode: 'Markdown' }
-            ).catch(() => {});
-
-            delete userStates[chatId];
-        }
-        else if (state.state === 'awaiting_custom_button' && isAdmin(userId)) {
-            const parts = text.split('|').map(p => p.trim()).filter(Boolean);
-
-            if (parts.length < 2) {
-                bot.sendMessage(chatId, '❌ Invalid format! Use: Button text | https://link').catch(() => {});
-                return;
-            }
-
-            const [label, url] = parts;
-            if (!url.startsWith('http')) {
-                bot.sendMessage(chatId, '❌ URL must start with http/https!').catch(() => {});
-                return;
-            }
-
-            const content = getCustomContent();
-            content.buttons = [...(content.buttons || []), { label, url }];
-            saveCustomContent(content);
-
-            bot.sendMessage(chatId,
-                `✅ *BUTTON ADDED*\n\n` +
-                `• ${escapeMarkdown(label)}\n` +
-                `${url}`,
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
 
