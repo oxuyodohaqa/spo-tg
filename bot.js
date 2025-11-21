@@ -3378,7 +3378,7 @@ else if (data.startsWith('claim_gift_')) {
                 `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\n` +
                 `📦 Accounts available: ${available}\n\n` +
                 `${statusLine}\n\n` +
-                `⚡ Delivery includes access (generator.email / domain) .\n` +
+                `⚡ Delivery includes access (generator.email / blade.biz.id) .\n` +
                 `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
