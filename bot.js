@@ -3318,11 +3318,8 @@ else if (data.startsWith('claim_gift_')) {
 
             const keyboard = {
                 inline_keyboard: [
-                    [
-                        canBuy
-                            ? { text: `✅ Buy Now (Rp ${formatIDR(ACCOUNT_PRICE_IDR)})`, callback_data: 'confirm_buy_account' }
-                            : { text: '💵 Top Up Balance', callback_data: 'topup_balance' }
-                    ],
+                    [{ text: `🛒 Order Account (Rp ${formatIDR(ACCOUNT_PRICE_IDR)})`, callback_data: 'confirm_buy_account' }],
+                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                     [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
