@@ -218,71 +218,25 @@ function updateStock(quantity, links = null) {
     }
 }
 
-function normalizeCustomContent(content = {}) {
-    const products = Array.isArray(content.products) ? content.products : [];
-    const buttons = Array.isArray(content.buttons) ? content.buttons : [];
-
-    let changed = false;
-
-    const normalizedButtons = buttons
-        .filter(btn => btn && btn.label && btn.url)
-        .map((btn, index) => {
-            if (!btn.id) {
-                changed = true;
-            }
-            return {
-                id: btn.id || `${Date.now()}_${index}`,
-                label: btn.label,
-                url: btn.url
-            };
-        });
-
+function getCustomContent() {
+    const content = loadJSON(CUSTOM_CONTENT_FILE, { products: [], buttons: [] });
     return {
-        data: { products, buttons: normalizedButtons },
-        changed
+        products: Array.isArray(content.products) ? content.products : [],
+        buttons: Array.isArray(content.buttons) ? content.buttons : []
     };
 }
 
-function getCustomContent() {
-    const content = loadJSON(CUSTOM_CONTENT_FILE, { products: [], buttons: [] });
-    const { data, changed } = normalizeCustomContent(content);
-    if (changed) {
-        saveJSON(CUSTOM_CONTENT_FILE, data);
-    }
-    return data;
-}
-
 function saveCustomContent(content) {
-    const { data } = normalizeCustomContent(content);
-    saveJSON(CUSTOM_CONTENT_FILE, data);
+    const normalized = {
+        products: Array.isArray(content.products) ? content.products : [],
+        buttons: Array.isArray(content.buttons) ? content.buttons : []
+    };
+    saveJSON(CUSTOM_CONTENT_FILE, normalized);
 }
 
 function chunkCustomButtons(buttons = []) {
     if (!Array.isArray(buttons) || buttons.length === 0) return [];
-    return buttons
-        .filter(btn => btn && btn.label && btn.url)
-        .map(btn => [{ text: btn.label, url: btn.url }]);
-}
-
-function buildCustomButtonsManager(content = {}) {
-    const buttons = Array.isArray(content.buttons) ? content.buttons : [];
-    const keyboard = { inline_keyboard: [] };
-
-    if (buttons.length > 0) {
-        buttons.forEach(btn => {
-            const preview = btn.label.length > 40 ? `${btn.label.slice(0, 37)}...` : btn.label;
-            keyboard.inline_keyboard.push([
-                { text: `🗑️ ${preview}`, callback_data: `remove_custom_button:${btn.id}` }
-            ]);
-        });
-    }
-
-    keyboard.inline_keyboard.push(
-        [{ text: '➕ Add Custom Button', callback_data: 'admin_add_custom_button' }],
-        [{ text: '🔙 Back', callback_data: 'admin_custom_content' }]
-    );
-
-    return keyboard;
+    return buttons.map(btn => [{ text: btn.label, url: btn.url }]);
 }
 
 function getOrders() {
