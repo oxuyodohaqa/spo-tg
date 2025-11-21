@@ -3318,23 +3318,31 @@ else if (data.startsWith('claim_gift_')) {
 
             const keyboard = {
                 inline_keyboard: [
-                    [
-                        canBuy
-                            ? { text: `✅ Buy Now (Rp ${formatIDR(ACCOUNT_PRICE_IDR)})`, callback_data: 'confirm_buy_account' }
-                            : { text: '💵 Top Up Balance', callback_data: 'topup_balance' }
-                    ],
+                    [{ text: `🛒 Order Account (Rp ${formatIDR(ACCOUNT_PRICE_IDR)})`, callback_data: 'confirm_buy_account' }],
+                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                     [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
 
+            const statusLine = available === 0
+                ? '❌ Out of stock! Add more accounts first.'
+                : canBuy
+                    ? '✅ Ready to deliver instantly!'
+                    : '⚠️ You can order now and top up if needed.';
+
             bot.editMessageText(
-                `🔑 *BUY VERIFIED ACCOUNT*\\n\\n` +
-                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\\n` +
-                `📦 Accounts available: ${available}\\n\\n` +
-                `💳 Your balance: Rp ${formatIDR(balance)}\\n` +
-                `${available === 0 ? '❌ Out of stock! Add more accounts first.' : canBuy ? '✅ Ready to deliver instantly!' : '⚠️ Not enough balance. Please top up.'}\\n\\n` +
-                `⚡ Delivery includes access (generator.email / domanin) and thank-you message.`,
+                `🔑 *BUY VERIFIED ACCOUNT*\n\n` +
+                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\n` +
+                `📦 Accounts available: ${available}\n\n` +
+                `💳 Your balance: Rp ${formatIDR(balance)}\n` +
+                `${statusLine}\n\n` +
+                `📦 What you get:\n` +
+                `• Spotify verified login + password\n` +
+                `• Inbox access for verification (email provided)\n\n` +
+                `🛒 How to order (same as links, no coupon needed):\n` +
+                `1) Tap *Order Account* for 1 verified account\n` +
+                `2) Balance auto-deducts on delivery — top up with QRIS/links if short`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
