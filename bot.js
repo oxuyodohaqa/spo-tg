@@ -24,9 +24,9 @@ const CLAIM_RESET_DAYS = 7;
 const LOW_STOCK_ALERT = 5;
 const ORDER_EXPIRY_MINUTES = 30;
 const ACCOUNT_MESSAGE_LIMIT = 20;
-const AUTO_BROADCAST_MIN_STOCK = 50;
 const MIN_TOPUP_AMOUNT = 0;
 const MAX_TOPUP_AMOUNT = 100000;
+const ACCOUNT_PRICE_IDR = 650;
 
 // File paths
 const ORDERS_FILE = 'orders.json';
@@ -42,6 +42,8 @@ const PENDING_PAYMENTS_FILE = 'pending_payments.json';
 const TOPUPS_FILE = 'topups.json';
 const GIFT_MESSAGES_FILE = 'gift_messages.json';
 const BONUSES_FILE = 'bonuses.json';
+const ACCOUNTS_FILE = 'accounts.json';
+const CUSTOM_CONTENT_FILE = 'custom_content.json';
 
 // Default pricing
 const DEFAULT_PRICING = {
@@ -109,6 +111,11 @@ function escapeMarkdown(text) {
         .replace(/\./g, '\\.');
 }
 
+function escapeInlineCode(text) {
+    if (!text) return '';
+    return String(text).replace(/`/g, '\\`');
+}
+
 function loadJSON(filename, defaultValue = {}) {
     try {
         if (fs.existsSync(filename)) {
@@ -161,6 +168,55 @@ function getStock() {
     return loadJSON(STOCK_FILE, { current_stock: 0, links: [] });
 }
 
+function getAccountStock() {
+    return loadJSON(ACCOUNTS_FILE, { accounts: [] });
+}
+
+function updateAccountStock(accounts = []) {
+    saveJSON(ACCOUNTS_FILE, { accounts });
+}
+
+function getCustomContent() {
+    return loadJSON(CUSTOM_CONTENT_FILE, { products: [], buttons: [] });
+}
+
+function safeGetCustomContent() {
+    try {
+        return typeof getCustomContent === 'function'
+            ? getCustomContent()
+            : { products: [], buttons: [] };
+    } catch (error) {
+        console.error('Error loading custom content:', error.message);
+        return { products: [], buttons: [] };
+    }
+}
+
+function saveCustomContent(content) {
+    const defaults = { products: [], buttons: [] };
+    saveJSON(CUSTOM_CONTENT_FILE, { ...defaults, ...content });
+}
+
+function chunkCustomButtons(buttons = []) {
+    const rows = [];
+    for (let i = 0; i < buttons.length; i += 2) {
+        const first = buttons[i];
+        const second = buttons[i + 1];
+        const row = [];
+
+        if (first?.label && first?.url) {
+            row.push({ text: first.label, url: first.url });
+        }
+        if (second?.label && second?.url) {
+            row.push({ text: second.label, url: second.url });
+        }
+
+        if (row.length > 0) {
+            rows.push(row);
+        }
+    }
+    return rows;
+}
+
 function updateStock(quantity, links = null) {
     const stock = getStock();
     const previousStock = stock.current_stock;
@@ -186,22 +242,20 @@ function updateStock(quantity, links = null) {
     
     if (links !== null && quantity > previousStock) {
         const stockAdded = quantity - previousStock;
-        if (stockAdded >= AUTO_BROADCAST_MIN_STOCK) {
-            setTimeout(() => {
-                broadcastRestock(quantity).then(result => {
-                    if (bot && botReady) {
-                        bot.sendMessage(ADMIN_TELEGRAM_ID,
-                            `📢 *AUTO-BROADCAST SENT!*\n\n` +
-                            `📦 Restock: +${stockAdded} links\n` +
-                            `✅ Success: ${result.success}\n` +
-                            `❌ Failed: ${result.failed}\n` +
-                            `📊 Total users: ${result.total}`,
-                            { parse_mode: 'Markdown' }
-                        ).catch(() => {});
-                    }
-                }).catch(() => {});
-            }, 2000);
-        }
+        setTimeout(() => {
+            broadcastRestock(quantity).then(result => {
+                if (bot && botReady) {
+                    bot.sendMessage(ADMIN_TELEGRAM_ID,
+                        `📢 *AUTO-BROADCAST SENT!*\n\n` +
+                        `📦 Restock: +${stockAdded} links\n` +
+                        `✅ Success: ${result.success}\n` +
+                        `❌ Failed: ${result.failed}\n` +
+                        `📊 Total users: ${result.total}`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(() => {});
+                }
+            }).catch(() => {});
+        }, 2000);
     }
 }
 
@@ -427,6 +481,10 @@ function getOrderTotalQuantity(order) {
 
 function formatOrderQuantitySummary(order) {
     if (!order) return '0 links';
+    if (order.product === 'account' || order.type === 'account') {
+        const total = getOrderTotalQuantity(order);
+        return `${total} account${total > 1 ? 's' : ''}`;
+    }
     const total = getOrderTotalQuantity(order);
     if (order.bonus_quantity && order.bonus_quantity > 0) {
         return `${order.quantity} + ${order.bonus_quantity} bonus = ${total} links`;
@@ -929,6 +987,42 @@ async function deliverlinks(userId, orderId, quantity, bonusQuantity = 0) {
     }
 }
 
+async function deliverAccount(userId, orderId = 'N/A') {
+    try {
+        const accountStock = getAccountStock();
+
+        if (!accountStock.accounts || accountStock.accounts.length === 0) {
+            return { success: false, message: '❌ No accounts available to deliver!' };
+        }
+
+        const nextAccount = accountStock.accounts.shift();
+        updateAccountStock(accountStock.accounts);
+
+        const safeAccount = escapeInlineCode(nextAccount);
+
+        const message = [
+            '✅ *ACCOUNT DELIVERED!*',
+            `📋 Order #: ${orderId}`,
+            `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
+            '',
+            '🔑 Credentials:',
+            `\`${safeAccount}\``,
+            '',
+            '🌐 Access: generator.email / omanin',
+            `📱 Support: ${ADMIN_USERNAME}`,
+            '',
+            'Thank you! 🙏'
+        ].join('\n');
+
+        await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
+
+        return { success: true, delivered: nextAccount };
+    } catch (error) {
+        console.error('Error delivering account:', error.message);
+        return { success: false, message: '❌ Failed to deliver account.' };
+    }
+}
+
 function broadcastToAll(message, options = {}) {
     const users = getUsers();
     const userIds = Object.keys(users).filter(id => parseInt(id) !== ADMIN_TELEGRAM_ID);
@@ -946,7 +1040,7 @@ function broadcastToAll(message, options = {}) {
 }
 
 function broadcastNewCoupon(couponData) {
-    const message = 
+    const message =
         `🎉 *NEW COUPON AVAILABLE!*\n\n` +
         `🎟️ Code: *${couponData.code}*\n` +
         `💰 Discount: *${couponData.discount_percent}% OFF*\n` +
@@ -956,13 +1050,29 @@ function broadcastNewCoupon(couponData) {
         `${couponData.expires_at ? `⏰ Valid until: ${new Date(couponData.expires_at).toLocaleString('id-ID')}\n` : ''}` +
         `\n💡 Use this code when placing your order to get instant discount!\n\n` +
         `📱 Order now: /start`;
-    
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastAccountRestock(addedCount, totalCount) {
+    const message = [
+        '🎉 *VERIFIED ACCOUNTS RESTOCKED!*',
+        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
+        `📦 In stock: *${totalCount}* ready to deliver`,
+        `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
+        '',
+        '🌐 Access: generator.email / omanin',
+        '⚡ Instant drop with thank-you message',
+        '',
+        'Order now: /start'
+    ].join('\n');
+
     return broadcastToAll(message, { parse_mode: 'Markdown' });
 }
 
 function broadcastRestock(quantity) {
     const pricing = getPricing();
-    const pricingText = Object.keys(pricing).slice(0, 4).map(range => 
+    const pricingText = Object.keys(pricing).slice(0, 4).map(range =>
         `• ${range}: Rp ${formatIDR(pricing[range])}/account`
     ).join('\n');
     
@@ -972,14 +1082,15 @@ function broadcastRestock(quantity) {
         ? `🎟️ Active coupons: ${activeCoupons.map(c => c.code).join(', ')}\n` 
         : '';
     
-    const message = 
+    const message =
         `📦 *STOCK RESTOCKED!*\n\n` +
         `✅ *${quantity} Spotify PREMIUM STUDENT LINKS* now available!\n\n` +
         `💰 *Current Pricing:*\n` +
         `${pricingText}\n\n` +
         `${couponText}` +
-        `🧮 Use calculator to check pricing!\n\n` +
-        `⚡ Order now before stock runs out: /start`;
+        `🧮 Use calculator to check pricing!\n` +
+        `⚡ Instant delivery after payment\n\n` +
+        `Order now: /start`;
     
     return broadcastToAll(message, { parse_mode: 'Markdown' });
 }
@@ -1480,6 +1591,7 @@ bot.onText(/\/start/, (msg) => {
                         { text: '📦 Stock', callback_data: 'admin_stock' }
                     ],
                     [
+                        { text: '🔑 Accounts', callback_data: 'admin_accounts' },
                         { text: '💵 Pricing', callback_data: 'admin_pricing' },
                         { text: '🎟️ Coupons', callback_data: 'admin_coupons' }
                     ],
@@ -1496,7 +1608,8 @@ bot.onText(/\/start/, (msg) => {
                         { text: '📋 View Gifts', callback_data: 'admin_view_gifts' }
                     ],
                     [
-                        { text: '📥 Get Test Links', callback_data: 'admin_get_links' }
+                        { text: '📥 Get Test Links', callback_data: 'admin_get_links' },
+                        { text: '🛍️ Custom Buttons', callback_data: 'admin_custom_content' }
                     ],
                     [
                         { text: '📢 Broadcast', callback_data: 'admin_broadcast' }
@@ -1507,6 +1620,7 @@ bot.onText(/\/start/, (msg) => {
             const users = getUsers();
             const orders = getOrders();
             const stock = getStock();
+            const accountStock = getAccountStock();
             const pendingTopups = getPendingTopups();
             
             bot.sendMessage(chatId, 
@@ -1517,6 +1631,7 @@ bot.onText(/\/start/, (msg) => {
                 `• Orders: ${orders.length}\n` +
                 `• Stock: ${stock.current_stock}\n` +
                 `• Links: ${stock.links.length}\n` +
+                `• Accounts: ${accountStock.accounts?.length || 0}\n` +
                 `• Pending Top-ups: ${pendingTopups.length}\n\n` +
                 `📅 ${getCurrentDateTime()}`,
                 { parse_mode: 'Markdown', reply_markup: keyboard }
@@ -1527,27 +1642,34 @@ bot.onText(/\/start/, (msg) => {
         const balance = getBalance(userId);
         const stock = getStock();
         const pricing = getPricing();
-        const pricingText = Object.keys(pricing).slice(0, 3).map(range => 
+        const customContent = safeGetCustomContent();
+        const customButtons = customContent.buttons || [];
+        const hasCustomProducts = (customContent.products || []).length > 0;
+        const pricingText = Object.keys(pricing).slice(0, 3).map(range =>
             `• ${range}: Rp ${formatIDR(pricing[range])}`
         ).join('\n');
         
         const keyboard = {
             inline_keyboard: [
                 [{ text: '🎵 Order Spotify', callback_data: 'order' }],
+                [{ text: '🔑 Buy Account (Rp 650)', callback_data: 'buy_account' }],
+                ...(hasCustomProducts ? [[{ text: '🛍️ Custom Products', callback_data: 'custom_products' }]] : []),
                 [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
                 [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                 [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
                 [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
                 [{ text: '📦 Stock', callback_data: 'check_stock' }],
                 [{ text: '📝 My Orders', callback_data: 'my_orders' }],
-                [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }]
+                [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
+                ...chunkCustomButtons(customButtons)
             ]
         };
         
-        bot.sendMessage(chatId, 
+        bot.sendMessage(chatId,
             `🎉 *Welcome to Spotify Store!*\n\n` +
             `Hi ${escapeMarkdown(user.first_name)}! 👋\n\n` +
             `🎵 Spotify Student PREMIUM\n` +
+            `🔑 Verified Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (balance only)\n` +
             `💳 Balance: Rp ${formatIDR(balance)}\n` +
             `📦 Stock: ${stock.current_stock} links\n\n` +
             `💰 *Pricing:*\n` +
@@ -1816,9 +1938,16 @@ bot.on('document', (msg) => {
     try {
         const chatId = msg.chat.id;
         const userId = msg.from.id;
-        
+
         if (!isAdmin(userId)) return;
-        
+
+        const state = userStates[chatId];
+        const uploadMode = state?.state;
+        const isAccountUpload = uploadMode === 'awaiting_account_upload';
+        const isLinkUpload = uploadMode === 'awaiting_stock_upload' || !uploadMode;
+
+        if (!isAccountUpload && !isLinkUpload) return;
+
         const document = msg.document;
         
         if (!document.file_name.endsWith('.txt')) {
@@ -1826,7 +1955,9 @@ bot.on('document', (msg) => {
             return;
         }
         
-        bot.sendMessage(chatId, '⏳ Uploading links...').then(statusMsg => {
+        const uploadingText = isAccountUpload ? '⏳ Uploading accounts...' : '⏳ Uploading links...';
+
+        bot.sendMessage(chatId, uploadingText).then(statusMsg => {
             bot.getFile(document.file_id).then(file => {
                 const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
                 
@@ -1835,42 +1966,95 @@ bot.on('document', (msg) => {
                     let data = '';
                     res.on('data', chunk => data += chunk);
                     res.on('end', () => {
-                        const links = data.split('\n')
-                            .map(l => l.trim())
-                            .filter(l => l.length > 0 && l.startsWith('http'));
-                        
+                        const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+                        if (isAccountUpload) {
+                            const credentials = lines.filter(l => l.includes(':') || l.includes('|'));
+                            const invalidCount = lines.length - credentials.length;
+
+                            if (credentials.length === 0) {
+                                bot.editMessageText(
+                                    '❌ No valid accounts found! Use email:password or user|pass format.',
+                                    { chat_id: chatId, message_id: statusMsg.message_id }
+                                ).catch(() => {});
+                                delete userStates[chatId];
+                                return;
+                            }
+
+                            const accountStock = getAccountStock();
+                            const merged = [...(accountStock.accounts || []), ...credentials];
+                            updateAccountStock(merged);
+
+                            bot.editMessageText(
+                                `✅ *ACCOUNTS UPLOADED!*\n\n` +
+                                `📤 Added: ${credentials.length} accounts\n` +
+                                `${invalidCount > 0 ? `⚠️ Skipped: ${invalidCount} invalid lines\n` : ''}` +
+                                `🔑 Total Accounts: ${merged.length}\n` +
+                                `📢 Broadcasting stock update to all users...\n\n` +
+                                `Thank you!`,
+                                {
+                                    chat_id: chatId,
+                                    message_id: statusMsg.message_id,
+                                    parse_mode: 'Markdown'
+                                }
+                            ).catch(() => {});
+
+                            broadcastAccountRestock(credentials.length, merged.length)
+                                .then(result => {
+                                    bot.sendMessage(chatId,
+                                        `📢 *AUTO-BROADCAST SENT!*\n\n` +
+                                        `✅ Success: ${result.success}\n` +
+                                        `❌ Failed: ${result.failed}\n` +
+                                        `👥 Total users: ${result.total}`,
+                                        { parse_mode: 'Markdown' }
+                                    ).catch(() => {});
+                                })
+                                .catch(() => {
+                                    bot.sendMessage(chatId,
+                                        '⚠️ Auto-broadcast failed to send!',
+                                        { parse_mode: 'Markdown' }
+                                    ).catch(() => {});
+                                });
+
+                            delete userStates[chatId];
+                            return;
+                        }
+
+                        const links = lines.filter(l => l.startsWith('http'));
+
                         if (links.length === 0) {
                             bot.editMessageText(
                                 '❌ No valid links found!\n\nLinks must start with http',
                                 { chat_id: chatId, message_id: statusMsg.message_id }
                             ).catch(() => {});
+                            delete userStates[chatId];
                             return;
                         }
-                        
+
                         const stock = getStock();
-                        const previousStock = stock.current_stock;
-                        
+
                         links.forEach(link => stock.links.push(link));
-                        
+
                         const newCount = stock.links.length;
                         const newStock = stock.current_stock + links.length;
-                        const stockAdded = links.length;
-                        
+
                         updateStock(newStock, stock.links);
-                        
-                        bot.editMessageText(
-                            `✅ *UPLOAD SUCCESS!*\n\n` +
-                            `📤 Added: ${links.length} links\n` +
-                            `🔗 Total Links: ${newCount}\n` +
-                            `📊 Display Stock: ${newStock}\n\n` +
-                            `${stockAdded >= AUTO_BROADCAST_MIN_STOCK ? `📢 Auto-broadcasting to all users...\n\n` : ''}` +
-                            `✅ Complete!`,
-                            { 
-                                chat_id: chatId, 
+
+                            bot.editMessageText(
+                                `✅ *UPLOAD SUCCESS!*\n\n` +
+                                `📤 Added: ${links.length} links\n` +
+                                `🔗 Total Links: ${newCount}\n` +
+                                `📊 Display Stock: ${newStock}\n\n` +
+                                `📢 Broadcasting stock update to all users...\n\n` +
+                                `✅ Complete!`,
+                                {
+                                    chat_id: chatId,
                                 message_id: statusMsg.message_id,
                                 parse_mode: 'Markdown'
                             }
                         ).catch(() => {});
+
+                        delete userStates[chatId];
                     });
                 }).on('error', (err) => {
                     console.error('Download error:', err.message);
@@ -2856,9 +3040,65 @@ else if (data.startsWith('claim_gift_')) {
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
+
+        else if (data === 'admin_custom_content') {
+            if (!isAdmin(userId)) return;
+
+            const customContent = safeGetCustomContent();
+            const productsCount = (customContent.products || []).length;
+            const buttonsCount = (customContent.buttons || []).length;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [
+                        { text: '➕ Add Product', callback_data: 'admin_add_custom_product' },
+                        { text: '🔗 Add Custom Button', callback_data: 'admin_add_custom_button' }
+                    ],
+                    [{ text: '👀 Preview User View', callback_data: 'custom_products' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🛍️ *CUSTOM BUTTONS & PRODUCTS*\n\n` +
+                `• Products: ${productsCount}\n` +
+                `• Extra buttons: ${buttonsCount}\n\n` +
+                `Use the options below to add new entries or preview how users see them.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'admin_add_custom_product') {
+            if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_custom_product' };
+
+            bot.sendMessage(chatId,
+                `➕ *ADD CUSTOM PRODUCT*\n\n` +
+                `Send details in one line using pipes (|):\n` +
+                `Title | Price | Description | Button Text | Button URL\n\n` +
+                `Example:\nPremium Panel | 25000 | Lifetime access | Buy Now | https://example.com`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'admin_add_custom_button') {
+            if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_custom_button' };
+
+            bot.sendMessage(chatId,
+                `🔗 *ADD CUSTOM BUTTON*\n\n` +
+                `Send in this format:\n` +
+                `Button text | https://link`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
         
         else if (data === 'upload_stock_instruction') {
             if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_stock_upload' };
             
             bot.sendMessage(chatId,
                 `📤 *UPLOAD STOCK*\n\n` +
@@ -2869,6 +3109,56 @@ else if (data.startsWith('claim_gift_')) {
                 `💡 Auto-broadcast if 50+ links added!`,
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
+        }
+
+        else if (data === 'admin_accounts') {
+            if (!isAdmin(userId)) return;
+
+            const accountStock = getAccountStock();
+            const available = accountStock.accounts?.length || 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '📤 Upload Accounts File', callback_data: 'upload_account_instruction' }],
+                    [{ text: '📊 Check Account Stock', callback_data: 'check_account_stock' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🔑 *ACCOUNT INVENTORY*\n\n` +
+                `📦 Accounts available: ${available}\n\n` +
+                `Use the options below to upload or check stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'upload_account_instruction') {
+            if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_account_upload' };
+
+            bot.sendMessage(chatId,
+                `📤 *UPLOAD VERIFIED ACCOUNTS*\n\n` +
+                `Send a .txt file now with one credential per line.\n\n` +
+                `Example:\n` +
+                `email:password\n` +
+                `user|pass` +
+                `\n\nKeep each account on its own line.`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'check_account_stock') {
+            if (!isAdmin(userId)) return;
+
+            const accountStock = getAccountStock();
+            const available = accountStock.accounts?.length || 0;
+
+            bot.answerCallbackQuery(query.id, {
+                text: `📦 Accounts available: ${available}`,
+                show_alert: true
+            }).catch(() => {});
         }
         
         else if (data === 'update_display_stock') {
@@ -3034,6 +3324,201 @@ else if (data.startsWith('claim_gift_')) {
         }
         
         // ===== USER MAIN MENU BUTTONS =====
+        else if (data === 'buy_account') {
+            const balance = getBalance(userId);
+            const accountStock = getAccountStock();
+            const available = accountStock.accounts?.length || 0;
+            const canBuy = available > 0 && balance >= ACCOUNT_PRICE_IDR;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [
+                        canBuy
+                            ? { text: `✅ Buy Now (Rp ${formatIDR(ACCOUNT_PRICE_IDR)})`, callback_data: 'confirm_buy_account' }
+                            : { text: '💵 Top Up Balance', callback_data: 'topup_balance' }
+                    ],
+                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
+            };
+
+            const messageLines = [
+                '🔑 *BUY VERIFIED ACCOUNT*',
+                '',
+                `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)`,
+                `📦 Accounts available: ${available}`,
+                '',
+                `💳 Your balance: Rp ${formatIDR(balance)}`,
+                available === 0
+                    ? '❌ Out of stock! Add more accounts first.'
+                    : canBuy
+                        ? '✅ Ready to deliver instantly!'
+                        : '⚠️ Not enough balance. Please top up.',
+                '',
+                '⚡ Delivery includes access (generator.email / omanin) and thank-you message.'
+            ].join('\n');
+
+            bot.editMessageText(messageLines, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
+        }
+
+        else if (data === 'custom_products') {
+            const customContent = safeGetCustomContent();
+            const products = customContent.products || [];
+
+            const keyboard = { inline_keyboard: [] };
+
+            products.forEach(product => {
+                keyboard.inline_keyboard.push([
+                    { text: `${product.title} - Rp ${formatIDR(product.price || 0)}`, callback_data: `view_custom_product_${product.id}` }
+                ]);
+            });
+
+            keyboard.inline_keyboard.push([{ text: '🔙 Back', callback_data: 'back_to_main' }]);
+
+            const productList = products.length > 0
+                ? products.map(p => `• *${escapeMarkdown(p.title)}* — Rp ${formatIDR(p.price || 0)}`).join('\n')
+                : 'No custom products available right now.';
+
+            bot.editMessageText(
+                `🛍️ *CUSTOM PRODUCTS*\n\n` +
+                `${productList}\n\n` +
+                `${products.length > 0 ? 'Tap a product to see details.' : 'Check back soon for new drops!'}`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data.startsWith('view_custom_product_')) {
+            const productId = parseInt(data.replace('view_custom_product_', ''));
+            const customContent = safeGetCustomContent();
+            const product = (customContent.products || []).find(p => p.id === productId);
+
+            if (!product) {
+                bot.answerCallbackQuery(query.id, { text: '❌ Product not found!', show_alert: true }).catch(() => {});
+                return;
+            }
+
+            const rows = [];
+            if (product.button_label && product.button_url) {
+                rows.push([{ text: product.button_label, url: product.button_url }]);
+            }
+            rows.push([{ text: '🔙 Back', callback_data: 'custom_products' }]);
+
+            const detailLines = [
+                `🛍️ *${escapeMarkdown(product.title)}*`,
+                `💵 Price: Rp ${formatIDR(product.price || 0)}`,
+                '',
+                `${escapeMarkdown(product.description || 'No description provided.')}`
+            ];
+
+            bot.editMessageText(detailLines.join('\n'), {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: rows }
+            }).catch(() => {});
+        }
+
+        else if (data === 'confirm_buy_account') {
+            const balance = getBalance(userId);
+            const accountStock = getAccountStock();
+            const available = accountStock.accounts?.length || 0;
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No accounts in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            if (balance < ACCOUNT_PRICE_IDR) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ Not enough balance! Top up first.',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            updateBalance(userId, -ACCOUNT_PRICE_IDR);
+
+            const orderId = getNextOrderId();
+            const users = getUsers();
+            const order = {
+                order_id: orderId,
+                user_id: userId,
+                username: users[userId]?.username || query.from.username || 'unknown',
+                quantity: 1,
+                total_quantity: 1,
+                original_price: ACCOUNT_PRICE_IDR,
+                total_price: ACCOUNT_PRICE_IDR,
+                status: 'completed',
+                payment_method: 'balance',
+                date: new Date().toISOString(),
+                completed_at: new Date().toISOString(),
+                product: 'account'
+            };
+
+            addOrder(order);
+
+            if (!users[userId]) {
+                addUser(userId, query.from);
+            }
+
+            const updatedUsers = getUsers();
+            updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+            updatedUsers[userId].completed_orders = (updatedUsers[userId].completed_orders || 0) + 1;
+            saveJSON(USERS_FILE, updatedUsers);
+
+            const delivery = await deliverAccount(userId, orderId);
+            const newBalance = getBalance(userId);
+
+            if (delivery.success) {
+                const purchaseMessage = [
+                    '✅ *ACCOUNT PURCHASED!*',
+                    '',
+                    `📋 Order: #${orderId}`,
+                    `💵 Paid: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}`,
+                    `💳 Balance left: Rp ${formatIDR(newBalance)}`,
+                    '',
+                    '🔑 Credentials sent in a separate message.',
+                    '🌐 Access: generator.email / omanin',
+                    `📱 Support: ${ADMIN_USERNAME}`
+                ].join('\\n');
+
+                bot.editMessageText(purchaseMessage, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                            [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
+                        ]
+                    }
+                }).catch(() => {});
+
+                bot.sendMessage(ADMIN_TELEGRAM_ID,
+                    `🆕 *ACCOUNT SOLD*\\n\\n` +
+                    `User: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')} (${userId})\\n` +
+                    `Order: #${orderId}\\n` +
+                    `Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}\\n` +
+                    `Remaining accounts: ${(getAccountStock().accounts || []).length}`,
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+            } else {
+                updateBalance(userId, ACCOUNT_PRICE_IDR);
+                updateOrder(orderId, { status: 'failed' });
+
+                bot.editMessageText(
+                    `❌ *DELIVERY FAILED*\\n\\n` +
+                    `Order: #${orderId}\\n` +
+                    `Your payment has been refunded.\\n\\n` +
+                    `Please contact ${ADMIN_USERNAME} for help.`,
+                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+                ).catch(() => {});
+            }
+        }
+
         else if (data === 'order') {
             const pricing = getPricing();
             const stock = getStock();
@@ -3334,13 +3819,18 @@ else if (data.startsWith('claim_gift_')) {
             const balance = getBalance(userId);
             const stock = getStock();
             const pricing = getPricing();
-            const pricingText = Object.keys(pricing).slice(0, 3).map(range => 
+            const customContent = safeGetCustomContent();
+            const customButtons = customContent.buttons || [];
+            const hasCustomProducts = (customContent.products || []).length > 0;
+            const pricingText = Object.keys(pricing).slice(0, 3).map(range =>
                 `• ${range}: Rp ${formatIDR(pricing[range])}`
             ).join('\n');
             
             const keyboard = {
                 inline_keyboard: [
                     [{ text: '🎵 Order Spotify', callback_data: 'order' }],
+                    [{ text: '🔑 Buy Account (Rp 650)', callback_data: 'buy_account' }],
+                    ...(hasCustomProducts ? [[{ text: '🛍️ Custom Products', callback_data: 'custom_products' }]] : []),
                     [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
                     [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                     [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
@@ -3348,21 +3838,23 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
                     [{ text: '📦 Stock', callback_data: 'check_stock' }],
                     [{ text: '📝 My Orders', callback_data: 'my_orders' }],
-                    [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }]
+                    [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
+                    ...chunkCustomButtons(customButtons)
                 ]
             };
 
             const bonuses = getBonuses();
             const bonusText = bonuses.length > 0 ? `\n\n🎁 *Bonus Deals:*\n${formatBonusDealsList()}` : '';
 
-            bot.editMessageText(
-                `🎉 *Welcome Back!*\n\n` +
-                `Hi ${escapeMarkdown(query.from.first_name)}! 👋\n\n` +
-                `💳 Balance: Rp ${formatIDR(balance)}\n` +
-                `📦 Stock: ${stock.current_stock} links\n\n` +
-                `💰 Prices:\n${pricingText}${bonusText}`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
+                bot.editMessageText(
+                    `🎉 *Welcome Back!*\n\n` +
+                    `Hi ${escapeMarkdown(query.from.first_name)}! 👋\n\n` +
+                    `💳 Balance: Rp ${formatIDR(balance)}\n` +
+                    `🔑 Verified Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (balance only)\n` +
+                    `📦 Stock: ${stock.current_stock} links\n\n` +
+                    `💰 Prices:\n${pricingText}${bonusText}`,
+                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+                ).catch(() => {});
         }
         
         else if (data === 'back_to_admin_main') {
@@ -3377,7 +3869,7 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '🎁 Bonuses', callback_data: 'admin_bonuses' }],
                     [{ text: '📱 GoPay', callback_data: 'admin_qris' }, { text: '🛒 Custom Order', callback_data: 'admin_custom_order' }],
                     [{ text: '📋 Pending Top-ups', callback_data: 'admin_pending_topups' }, { text: '💰 Add Balance', callback_data: 'admin_add_balance' }],
-                    [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }],
+                    [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }, { text: '🛍️ Custom Buttons', callback_data: 'admin_custom_content' }],
                     [{ text: '📢 Broadcast', callback_data: 'admin_broadcast' }]
                 ]
             };
@@ -3641,6 +4133,38 @@ else if (data.startsWith('claim_gift_')) {
         
     } catch (error) {
         console.error('Error in callback query:', error.message);
+    }
+});
+
+// ============================================
+// ADMIN COMMANDS
+// ============================================
+
+bot.onText(/\/deliver_account\s+(\d+)(?:\s+(\d+))?/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+
+    if (!isAdmin(userId)) return;
+
+    const targetUserId = parseInt(match[1]);
+    const orderId = match[2] ? parseInt(match[2]) : 'manual';
+
+    if (isNaN(targetUserId)) {
+        bot.sendMessage(chatId, '❌ Please provide a valid user ID!').catch(() => {});
+        return;
+    }
+
+    const result = await deliverAccount(targetUserId, orderId);
+
+    if (result.success) {
+        bot.sendMessage(chatId,
+            `✅ Account sent to user ${targetUserId}!\n\n` +
+            `📋 Order #: ${orderId}\n` +
+            `🔑 Delivered: ${result.delivered}`,
+            { parse_mode: 'Markdown' }
+        ).catch(() => {});
+    } else {
+        bot.sendMessage(chatId, result.message || '❌ Failed to deliver account.').catch(() => {});
     }
 });
 
@@ -4125,6 +4649,68 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             bot.sendMessage(chatId,
                 `✅ *PRICING UPDATED!*\n\n` +
                 `${pricingText}`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+
+            delete userStates[chatId];
+        }
+        else if (state.state === 'awaiting_custom_product' && isAdmin(userId)) {
+            const parts = text.split('|').map(p => p.trim()).filter(Boolean);
+
+            if (parts.length < 3) {
+                bot.sendMessage(chatId,
+                    '❌ Invalid format! Use: Title | Price | Description | Button Text | Button URL'
+                ).catch(() => {});
+                return;
+            }
+
+            const [title, priceRaw, description, buttonLabel, buttonUrl] = parts;
+            const price = parseInt(priceRaw.replace(/\D/g, '')) || 0;
+
+            const content = safeGetCustomContent();
+            const product = {
+                id: Date.now(),
+                title,
+                price,
+                description,
+                button_label: buttonLabel || null,
+                button_url: buttonUrl || null
+            };
+
+            content.products = [...(content.products || []), product];
+            saveCustomContent(content);
+
+            bot.sendMessage(chatId,
+                `✅ *CUSTOM PRODUCT SAVED*\n\n` +
+                `• ${escapeMarkdown(title)} — Rp ${formatIDR(price)}\n` +
+                `${description ? `📝 ${escapeMarkdown(description)}` : ''}`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+
+            delete userStates[chatId];
+        }
+        else if (state.state === 'awaiting_custom_button' && isAdmin(userId)) {
+            const parts = text.split('|').map(p => p.trim()).filter(Boolean);
+
+            if (parts.length < 2) {
+                bot.sendMessage(chatId, '❌ Invalid format! Use: Button text | https://link').catch(() => {});
+                return;
+            }
+
+            const [label, url] = parts;
+            if (!url.startsWith('http')) {
+                bot.sendMessage(chatId, '❌ URL must start with http/https!').catch(() => {});
+                return;
+            }
+
+            const content = safeGetCustomContent();
+            content.buttons = [...(content.buttons || []), { label, url }];
+            saveCustomContent(content);
+
+            bot.sendMessage(chatId,
+                `✅ *BUTTON ADDED*\n\n` +
+                `• ${escapeMarkdown(label)}\n` +
+                `${url}`,
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
 
