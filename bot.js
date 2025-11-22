@@ -450,19 +450,29 @@ function formatBonusDealsList() {
     ).join('\n');
 }
 
+function isAccountOrder(order) {
+    if (!order) return false;
+    return order.product === 'account' || order.product === 'accounts' || order.type === 'account' || order.type === 'accounts';
+}
+
 function getOrderTotalQuantity(order) {
     if (!order) return 0;
+    const baseQuantity = order.quantity || 0;
+
+    if (isAccountOrder(order)) {
+        return baseQuantity;
+    }
+
     if (typeof order.total_quantity === 'number') {
         return order.total_quantity;
     }
-    const baseQuantity = order.quantity || 0;
     const bonusQuantity = order.bonus_quantity || 0;
     return baseQuantity + bonusQuantity;
 }
 
 function formatOrderQuantitySummary(order) {
     if (!order) return '0 links';
-    if (order.product === 'account' || order.type === 'account') {
+    if (isAccountOrder(order)) {
         const total = getOrderTotalQuantity(order);
         return `${total} account${total > 1 ? 's' : ''}`;
     }
@@ -2208,8 +2218,8 @@ bot.on('callback_query', async (query) => {
                 return;
             }
             
-            const deliveryQuantity = getOrderTotalQuantity(order);
-            const bonusNote = order.bonus_quantity ? ` (includes +${order.bonus_quantity} bonus)` : '';
+            const deliveryQuantity = accountOrder ? (order.quantity || 0) : getOrderTotalQuantity(order);
+            const bonusNote = !accountOrder && order.bonus_quantity ? ` (includes +${order.bonus_quantity} bonus)` : '';
 
             bot.editMessageCaption(
                 `⏳ *PROCESSING PAYMENT...*\n\n` +
