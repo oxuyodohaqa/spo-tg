@@ -2087,6 +2087,7 @@ bot.on('callback_query', async (query) => {
         const messageId = query.message.message_id;
         const data = query.data;
         const userId = query.from.id;
+        let accountOrder = false;
         
         bot.answerCallbackQuery(query.id).catch(() => {});
         
