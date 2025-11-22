@@ -450,19 +450,29 @@ function formatBonusDealsList() {
     ).join('\n');
 }
 
+function isAccountOrder(order) {
+    if (!order) return false;
+    return order.product === 'account' || order.product === 'accounts' || order.type === 'account' || order.type === 'accounts';
+}
+
 function getOrderTotalQuantity(order) {
     if (!order) return 0;
+    const baseQuantity = order.quantity || 0;
+
+    if (isAccountOrder(order)) {
+        return baseQuantity;
+    }
+
     if (typeof order.total_quantity === 'number') {
         return order.total_quantity;
     }
-    const baseQuantity = order.quantity || 0;
     const bonusQuantity = order.bonus_quantity || 0;
     return baseQuantity + bonusQuantity;
 }
 
 function formatOrderQuantitySummary(order) {
     if (!order) return '0 links';
-    if (order.product === 'account' || order.type === 'account') {
+    if (isAccountOrder(order)) {
         const total = getOrderTotalQuantity(order);
         return `${total} account${total > 1 ? 's' : ''}`;
     }
@@ -2194,11 +2204,12 @@ bot.on('callback_query', async (query) => {
         // ===== PAYMENT VERIFICATION BUTTONS =====
         else if (data.startsWith('verify_payment_')) {
             if (!isAdmin(userId)) return;
-            
+
             const orderId = parseInt(data.replace('verify_payment_', ''));
             const orders = getOrders();
             const order = orders.find(o => o.order_id === orderId);
-            
+            const accountOrder = isAccountOrder(order);
+
             if (!order) {
                 bot.answerCallbackQuery(query.id, {
                     text: '❌ Order not found!',
@@ -2207,22 +2218,29 @@ bot.on('callback_query', async (query) => {
                 return;
             }
             
-            const deliveryQuantity = getOrderTotalQuantity(order);
-            const bonusNote = order.bonus_quantity ? ` (includes +${order.bonus_quantity} bonus)` : '';
+            const deliveryQuantity = accountOrder ? (order.quantity || 0) : getOrderTotalQuantity(order);
+            const bonusNote = !accountOrder && order.bonus_quantity ? ` (includes +${order.bonus_quantity} bonus)` : '';
 
             bot.editMessageCaption(
                 `⏳ *PROCESSING PAYMENT...*\n\n` +
                 `Order #${orderId}\n` +
-                `Delivering ${deliveryQuantity} links${bonusNote}...`,
+                `Delivering ${deliveryQuantity} ${accountOrder ? 'account(s)' : 'links'}${bonusNote}...`,
                 {
                     chat_id: chatId,
                     message_id: messageId,
                     parse_mode: 'Markdown'
                 }
             ).catch(() => {});
-            
-            const delivered = await deliverlinks(order.user_id, orderId, order.quantity, order.bonus_quantity || 0);
-            
+
+            let delivered = false;
+
+            if (accountOrder) {
+                const result = await deliverAccounts(order.user_id, orderId, deliveryQuantity);
+                delivered = result.success;
+            } else {
+                delivered = await deliverlinks(order.user_id, orderId, order.quantity, order.bonus_quantity || 0);
+            }
+
             if (delivered) {
                 updateOrder(orderId, {
                     status: 'completed',
@@ -2244,10 +2262,10 @@ bot.on('callback_query', async (query) => {
                     `👤 @${escapeMarkdown(order.username)}\n` +
                     `📦 ${formatOrderQuantitySummary(order)}\n` +
                     `💰 Rp ${formatIDR(order.total_price)}\n\n` +
-                    `✅ links sent!\n` +
+                    `✅ ${accountOrder ? 'Account(s) sent!' : 'links sent!'}\n` +
                     `⏰ ${getCurrentDateTime()}`,
-                    { 
-                        chat_id: chatId, 
+                    {
+                        chat_id: chatId,
                         message_id: messageId,
                         parse_mode: 'Markdown'
                     }
@@ -2257,10 +2275,10 @@ bot.on('callback_query', async (query) => {
                     `❌ *INSUFFICIENT STOCK!*\n\n` +
                     `Order #${orderId}\n` +
                     `Need: ${deliveryQuantity}\n` +
-                    `Available: ${getStock().links.length}\n\n` +
-                    `Add more links!`,
-                    { 
-                        chat_id: chatId, 
+                    `Available: ${accountOrder ? (getAccountStock().accounts || []).length : getStock().links.length}\n\n` +
+                    (accountOrder ? 'Add more accounts!' : 'Add more links!'),
+                    {
+                        chat_id: chatId,
                         message_id: messageId,
                         parse_mode: 'Markdown'
                     }
