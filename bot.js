@@ -27,6 +27,7 @@ const ACCOUNT_MESSAGE_LIMIT = 20;
 const MIN_TOPUP_AMOUNT = 0;
 const MAX_TOPUP_AMOUNT = 100000;
 const ACCOUNT_PRICE_IDR = 650;
+const GPT_BASICS_PRICE_IDR = 50;
 const AUTO_BROADCAST_MIN_STOCK = 1;
 
 // File paths
@@ -45,6 +46,7 @@ const GIFT_MESSAGES_FILE = 'gift_messages.json';
 const BONUSES_FILE = 'bonuses.json';
 const ACCOUNTS_FILE = 'accounts.json';
 const CUSTOM_CONTENT_FILE = 'custom_content.json';
+const GPT_BASICS_FILE = 'gpt_basics.json';
 
 // Default pricing
 const DEFAULT_PRICING = {
@@ -180,6 +182,14 @@ function getAccountStock() {
 
 function updateAccountStock(accounts = []) {
     saveJSON(ACCOUNTS_FILE, { accounts });
+}
+
+function getGptBasicsStock() {
+    return loadJSON(GPT_BASICS_FILE, { accounts: [] });
+}
+
+function updateGptBasicsStock(accounts = []) {
+    saveJSON(GPT_BASICS_FILE, { accounts });
 }
 
 function updateStock(quantity, links = null) {
@@ -460,11 +470,20 @@ function isAccountOrder(order) {
     return order.product === 'account' || order.product === 'accounts' || order.type === 'account' || order.type === 'accounts';
 }
 
+function isGptBasicsOrder(order) {
+    if (!order) return false;
+    return order.product === 'gpt_basic' || order.type === 'gpt_basic' || order.product === 'gpt_basics';
+}
+
+function isCredentialOrder(order) {
+    return isAccountOrder(order) || isGptBasicsOrder(order);
+}
+
 function getOrderTotalQuantity(order) {
     if (!order) return 0;
     const baseQuantity = order.quantity || 0;
 
-    if (isAccountOrder(order)) {
+    if (isCredentialOrder(order)) {
         return baseQuantity;
     }
 
@@ -480,6 +499,10 @@ function formatOrderQuantitySummary(order) {
     if (isAccountOrder(order)) {
         const total = getOrderTotalQuantity(order);
         return `${total} account${total > 1 ? 's' : ''}`;
+    }
+    if (isGptBasicsOrder(order)) {
+        const total = getOrderTotalQuantity(order);
+        return `${total} GPT Basics account${total > 1 ? 's' : ''}`;
     }
     const total = getOrderTotalQuantity(order);
     if (order.bonus_quantity && order.bonus_quantity > 0) {
@@ -1048,6 +1071,41 @@ async function deliverAccounts(userId, orderId, quantity, pricePerAccount = ACCO
     }
 }
 
+async function deliverGptBasics(userId, orderId, quantity, pricePerAccount = GPT_BASICS_PRICE_IDR) {
+    try {
+        const stock = getGptBasicsStock();
+
+        if (!stock.accounts || stock.accounts.length < quantity) {
+            return { success: false, message: '❌ Not enough GPT Basics accounts available to deliver!' };
+        }
+
+        const delivered = stock.accounts.splice(0, quantity);
+        updateGptBasicsStock(stock.accounts);
+
+        const credentials = delivered
+            .map(acc => `• \`${escapeMarkdown(acc)}\``)
+            .join('\n');
+
+        const totalPrice = quantity * pricePerAccount;
+
+        const message =
+            `✅ *GPT BASICS DELIVERED!*\n\n` +
+            `📋 Order #: ${orderId}\n` +
+            `🔢 Quantity: ${quantity}\n` +
+            `💵 Total: Rp ${formatIDR(totalPrice)} (${formatIDR(pricePerAccount)} each)\n\n` +
+            `🔑 Credentials:\n${credentials}\n\n` +
+            `📥 Access via https://generator.email/ inbox.\n` +
+            `📱 Support: ${ADMIN_USERNAME}`;
+
+        await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
+
+        return { success: true, delivered };
+    } catch (error) {
+        console.error('Error delivering GPT Basics:', error.message);
+        return { success: false, message: '❌ Failed to deliver GPT Basics account(s).' };
+    }
+}
+
 function broadcastToAll(message, options = {}) {
     const users = getUsers();
     const userIds = Object.keys(users).filter(id => parseInt(id) !== ADMIN_TELEGRAM_ID);
@@ -1089,6 +1147,19 @@ function broadcastAccountRestock(addedCount, totalCount) {
         '📥 Inbox access included for verification',
         '',
         '⚡ Grab yours now before they sell out!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastGptBasicsRestock(addedCount, totalCount) {
+    const message = [
+        '🤖 *GPT BASICS ACCOUNTS RESTOCKED!*',
+        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
+        `🔑 Total Stock: *${totalCount}* ready to claim`,
+        '',
+        `💵 Price: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)} (no bulk)`,
+        '⚡ Order now before stock runs out!'
     ].join('\n');
 
     return broadcastToAll(message, { parse_mode: 'Markdown' });
@@ -1616,6 +1687,9 @@ bot.onText(/\/start/, (msg) => {
                     ],
                     [
                         { text: '🔑 Accounts', callback_data: 'admin_accounts' },
+                        { text: '🤖 GPT Basics', callback_data: 'admin_gpt_basics' }
+                    ],
+                    [
                         { text: '💵 Pricing', callback_data: 'admin_pricing' },
                         { text: '🎟️ Coupons', callback_data: 'admin_coupons' }
                     ],
@@ -1642,6 +1716,7 @@ bot.onText(/\/start/, (msg) => {
             const orders = getOrders();
             const stock = getStock();
             const accountStock = getAccountStock();
+            const gptStock = getGptBasicsStock();
             const pendingTopups = getPendingTopups();
             
             bot.sendMessage(chatId, 
@@ -1653,6 +1728,7 @@ bot.onText(/\/start/, (msg) => {
                 `• Stock: ${stock.current_stock}\n` +
                 `• Links: ${stock.links.length}\n` +
                 `• Accounts: ${accountStock.accounts?.length || 0}\n` +
+                `• GPT Basics: ${gptStock.accounts?.length || 0}\n` +
                 `• Pending Top-ups: ${pendingTopups.length}\n\n` +
                 `📅 ${getCurrentDateTime()}`,
                 { parse_mode: 'Markdown', reply_markup: keyboard }
@@ -1663,7 +1739,9 @@ bot.onText(/\/start/, (msg) => {
         const balance = getBalance(userId);
         const stock = getStock();
         const accountStock = getAccountStock();
+        const gptStock = getGptBasicsStock();
         const accountAvailable = accountStock.accounts?.length || 0;
+        const gptAvailable = gptStock.accounts?.length || 0;
         const linkAvailable = stock.links?.length || 0;
         const pricing = getPricing();
         const pricingText = Object.keys(pricing).slice(0, 3).map(range =>
@@ -1674,6 +1752,7 @@ bot.onText(/\/start/, (msg) => {
             inline_keyboard: [
                 [{ text: '🎵 Order Spotify', callback_data: 'order' }],
                 [{ text: '🔑 Buy Account (Rp 650)', callback_data: 'buy_account' }],
+                [{ text: '🤖 Buy GPT Basics', callback_data: 'buy_gpt_basics' }],
                 [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
                 [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                 [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
@@ -1689,9 +1768,11 @@ bot.onText(/\/start/, (msg) => {
                 `Hi ${escapeMarkdown(user.first_name)}! 👋\n\n` +
                 `🎵 Spotify Student PREMIUM\n` +
                 `🔑 Verified Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}\n` +
+                `🤖 GPT Basics: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)}\n` +
                 `💳 Balance: Rp ${formatIDR(balance)}\n` +
                 `📦 Stock: ${linkAvailable} links\n` +
-                `🔑 Accounts in stock: ${accountAvailable}\n\n` +
+                `🔑 Accounts in stock: ${accountAvailable}\n` +
+                `🤖 GPT Basics in stock: ${gptAvailable}\n\n` +
                 `💰 *Pricing:*\n` +
                 `${pricingText}\n\n` +
             `🎁 Daily bonus available!\n` +
@@ -1929,6 +2010,12 @@ bot.on('photo', async (msg) => {
         const users = getUsers();
         const username = users[userId]?.username || 'unknown';
         
+        const unitPrice = isAccountOrder(order)
+            ? ACCOUNT_PRICE_IDR
+            : isGptBasicsOrder(order)
+                ? GPT_BASICS_PRICE_IDR
+                : getPricePerUnit(order.quantity);
+
         bot.sendPhoto(ADMIN_TELEGRAM_ID, photo.file_id, {
             caption:
                 `💳 *ORDER PAYMENT RECEIPT*\n\n` +
@@ -1937,7 +2024,7 @@ bot.on('photo', async (msg) => {
                 `🆔 User ID: ${userId}\n\n` +
                 `📦 Quantity: ${formatOrderQuantitySummary(order)}\n` +
                 `💰 Total: Rp ${formatIDR(order.total_price)}\n` +
-                `💵 Price/Unit: Rp ${formatIDR(getPricePerUnit(order.quantity))}\n` +
+                `💵 Price/Unit: Rp ${formatIDR(unitPrice)}\n` +
                 `${order.coupon_code ? `🎟️ Coupon: ${order.coupon_code} (-${order.discount_percent}%)\n` : ''}` +
                 `\n⏰ Uploaded: ${getCurrentDateTime()}\n\n` +
                 `👇 Click button to verify or reject:`,
@@ -1964,9 +2051,10 @@ bot.on('document', (msg) => {
         const state = userStates[chatId];
         const uploadMode = state?.state;
         const isAccountUpload = uploadMode === 'awaiting_account_upload';
-        const isLinkUpload = uploadMode === 'awaiting_stock_upload' || !uploadMode;
+        const isGptUpload = uploadMode === 'awaiting_gpt_upload';
+        const isLinkUpload = uploadMode === 'awaiting_stock_upload' || (!uploadMode && !isGptUpload);
 
-        if (!isAccountUpload && !isLinkUpload) return;
+        if (!isAccountUpload && !isLinkUpload && !isGptUpload) return;
 
         const document = msg.document;
         
@@ -1975,7 +2063,7 @@ bot.on('document', (msg) => {
             return;
         }
         
-        const uploadingText = isAccountUpload ? '⏳ Uploading accounts...' : '⏳ Uploading links...';
+        const uploadingText = isAccountUpload || isGptUpload ? '⏳ Uploading accounts...' : '⏳ Uploading links...';
 
         bot.sendMessage(chatId, uploadingText).then(statusMsg => {
             bot.getFile(document.file_id).then(file => {
@@ -1988,7 +2076,7 @@ bot.on('document', (msg) => {
                     res.on('end', () => {
                         const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-                        if (isAccountUpload) {
+                        if (isAccountUpload || isGptUpload) {
                             if (lines.length === 0) {
                                 bot.editMessageText(
                                     '❌ No valid accounts found! Add one credential per line.',
@@ -1998,26 +2086,49 @@ bot.on('document', (msg) => {
                                 return;
                             }
 
-                            const accountStock = getAccountStock();
-                            const merged = [...(accountStock.accounts || []), ...lines];
-                            updateAccountStock(merged);
+                            if (isGptUpload) {
+                                const gptStock = getGptBasicsStock();
+                                const merged = [...(gptStock.accounts || []), ...lines];
+                                updateGptBasicsStock(merged);
 
-                            broadcastAccountRestock(lines.length, merged.length).catch(() => {});
+                                broadcastGptBasicsRestock(lines.length, merged.length).catch(() => {});
 
-                            bot.editMessageText(
-                                `✅ *ACCOUNTS UPLOADED!*\n\n` +
-                                `📤 Added: ${lines.length} accounts\n` +
-                                `🔑 Total Accounts: ${merged.length}\n\n` +
-                                `Thank you!`,
-                                {
-                                    chat_id: chatId,
-                                    message_id: statusMsg.message_id,
-                                    parse_mode: 'Markdown'
-                                }
-                            ).catch(() => {});
+                                bot.editMessageText(
+                                    `✅ *GPT BASICS UPLOADED!*\n\n` +
+                                    `📤 Added: ${lines.length} accounts\n` +
+                                    `🤖 Total GPT Basics: ${merged.length}\n\n` +
+                                    `Thank you!`,
+                                    {
+                                        chat_id: chatId,
+                                        message_id: statusMsg.message_id,
+                                        parse_mode: 'Markdown'
+                                    }
+                                ).catch(() => {});
 
-                            delete userStates[chatId];
-                            return;
+                                delete userStates[chatId];
+                                return;
+                            } else {
+                                const accountStock = getAccountStock();
+                                const merged = [...(accountStock.accounts || []), ...lines];
+                                updateAccountStock(merged);
+
+                                broadcastAccountRestock(lines.length, merged.length).catch(() => {});
+
+                                bot.editMessageText(
+                                    `✅ *ACCOUNTS UPLOADED!*\n\n` +
+                                    `📤 Added: ${lines.length} accounts\n` +
+                                    `🔑 Total Accounts: ${merged.length}\n\n` +
+                                    `Thank you!`,
+                                    {
+                                        chat_id: chatId,
+                                        message_id: statusMsg.message_id,
+                                        parse_mode: 'Markdown'
+                                    }
+                                ).catch(() => {});
+
+                                delete userStates[chatId];
+                                return;
+                            }
                         }
 
                         const links = lines.filter(l => l.startsWith('http'));
@@ -2087,7 +2198,6 @@ bot.on('callback_query', async (query) => {
         const messageId = query.message.message_id;
         const data = query.data;
         const userId = query.from.id;
-        let accountOrder = false;
         
         bot.answerCallbackQuery(query.id).catch(() => {});
         
@@ -2215,6 +2325,8 @@ bot.on('callback_query', async (query) => {
             const orders = getOrders();
             const order = orders.find(o => o.order_id === orderId);
             const isAccountOrder = order?.product === 'account' || order?.type === 'account';
+            const isGptOrder = isGptBasicsOrder(order);
+            const isCredential = isAccountOrder || isGptOrder;
 
             if (!order) {
                 bot.answerCallbackQuery(query.id, {
@@ -2224,13 +2336,13 @@ bot.on('callback_query', async (query) => {
                 return;
             }
             
-            const deliveryQuantity = accountOrder ? (order.quantity || 0) : getOrderTotalQuantity(order);
-            const bonusNote = !accountOrder && order.bonus_quantity ? ` (includes +${order.bonus_quantity} bonus)` : '';
+            const deliveryQuantity = isCredential ? (order.quantity || 0) : getOrderTotalQuantity(order);
+            const bonusNote = !isCredential && order.bonus_quantity ? ` (includes +${order.bonus_quantity} bonus)` : '';
 
             bot.editMessageCaption(
                 `⏳ *PROCESSING PAYMENT...*\n\n` +
                 `Order #${orderId}\n` +
-                `Delivering ${deliveryQuantity} ${isAccountOrder ? 'account(s)' : 'links'}${bonusNote}...`,
+                `Delivering ${deliveryQuantity} ${isAccountOrder ? 'account(s)' : isGptOrder ? 'GPT Basics account(s)' : 'links'}${bonusNote}...`,
                 {
                     chat_id: chatId,
                     message_id: messageId,
@@ -2242,6 +2354,9 @@ bot.on('callback_query', async (query) => {
 
             if (isAccountOrder) {
                 const result = await deliverAccounts(order.user_id, orderId, order.quantity);
+                delivered = result.success;
+            } else if (isGptOrder) {
+                const result = await deliverGptBasics(order.user_id, orderId, order.quantity);
                 delivered = result.success;
             } else {
                 delivered = await deliverlinks(order.user_id, orderId, order.quantity, order.bonus_quantity || 0);
@@ -2268,7 +2383,7 @@ bot.on('callback_query', async (query) => {
                     `👤 @${escapeMarkdown(order.username)}\n` +
                     `📦 ${formatOrderQuantitySummary(order)}\n` +
                     `💰 Rp ${formatIDR(order.total_price)}\n\n` +
-                    `✅ ${isAccountOrder ? 'Account(s) sent!' : 'links sent!'}\n` +
+                    `✅ ${isAccountOrder ? 'Account(s) sent!' : isGptOrder ? 'GPT Basics sent!' : 'links sent!'}\n` +
                     `⏰ ${getCurrentDateTime()}`,
                     {
                         chat_id: chatId,
@@ -3184,6 +3299,28 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        else if (data === 'admin_gpt_basics') {
+            if (!isAdmin(userId)) return;
+
+            const gptStock = getGptBasicsStock();
+            const available = gptStock.accounts?.length || 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '📤 Upload GPT Basics File', callback_data: 'upload_gpt_instruction' }],
+                    [{ text: '📊 Check GPT Basics Stock', callback_data: 'check_gpt_stock' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🤖 *GPT BASICS INVENTORY*\n\n` +
+                `📦 Accounts available: ${available}\n\n` +
+                `Use the options below to upload or check stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
         else if (data === 'upload_account_instruction') {
             if (!isAdmin(userId)) return;
 
@@ -3201,6 +3338,23 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        else if (data === 'upload_gpt_instruction') {
+            if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_gpt_upload' };
+
+            bot.sendMessage(chatId,
+                `📤 *UPLOAD GPT BASICS*\n\n` +
+                `Send a .txt file now with one credential per line.\n\n` +
+                `Example:\n` +
+                `email:password\n` +
+                `user|pass\n\n` +
+                `Keep each GPT Basics account on its own line.\n` +
+                `💡 Uploads auto-broadcast the restock to users.`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
         else if (data === 'check_account_stock') {
             if (!isAdmin(userId)) return;
 
@@ -3209,6 +3363,18 @@ else if (data.startsWith('claim_gift_')) {
 
             bot.answerCallbackQuery(query.id, {
                 text: `📦 Accounts available: ${available}`,
+                show_alert: true
+            }).catch(() => {});
+        }
+
+        else if (data === 'check_gpt_stock') {
+            if (!isAdmin(userId)) return;
+
+            const gptStock = getGptBasicsStock();
+            const available = gptStock.accounts?.length || 0;
+
+            bot.answerCallbackQuery(query.id, {
+                text: `📦 GPT Basics available: ${available}`,
                 show_alert: true
             }).catch(() => {});
         }
@@ -3408,6 +3574,38 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        else if (data === 'buy_gpt_basics') {
+            const gptStock = getGptBasicsStock();
+            const available = gptStock.accounts?.length || 0;
+            const canBuy = available > 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '💳 Pay with Balance', callback_data: 'pay_gpt_balance' }],
+                    [{ text: '📱 Pay via QRIS', callback_data: 'pay_gpt_qris' }],
+                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
+                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
+            };
+
+            const statusLine = available === 0
+                ? '❌ Out of stock! Add more GPT Basics first.'
+                : canBuy
+                    ? '✅ Choose payment method below.'
+                    : '⚠️ Not enough balance. Please top up.';
+
+            bot.editMessageText(
+                `🤖 *BUY GPT BASICS*\n\n` +
+                `💵 Price: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)} (no bulk)\n` +
+                `📦 Accounts available: ${available}\n\n` +
+                `${statusLine}\n\n` +
+                `🔗 Access via https://generator.email/ inbox.\n` +
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
         else if (data === 'pay_account_balance' || data === 'confirm_buy_account') {
             const accountStock = getAccountStock();
             const available = accountStock.accounts?.length || 0;
@@ -3468,6 +3666,70 @@ else if (data.startsWith('claim_gift_')) {
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
                 `Send the number of accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_gpt_balance' || data === 'confirm_buy_gpt') {
+            const gptStock = getGptBasicsStock();
+            const available = gptStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(50, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No GPT Basics in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_gpt_quantity',
+                payment_method: 'balance',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `💳 Paying with balance\n` +
+                `💵 Price: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)} per account\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of GPT Basics accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_gpt_qris') {
+            const gptStock = getGptBasicsStock();
+            const available = gptStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(50, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No GPT Basics in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_gpt_quantity',
+                payment_method: 'qris',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `📱 Paying via QRIS/links\n` +
+                `💵 Price: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)} per account\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of GPT Basics accounts you want to buy.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
             ).catch(() => {});
         }
@@ -3620,6 +3882,8 @@ else if (data.startsWith('claim_gift_')) {
             const stock = getStock();
             const accountStock = getAccountStock();
             const accountAvailable = accountStock.accounts?.length || 0;
+            const gptStock = getGptBasicsStock();
+            const gptAvailable = gptStock.accounts?.length || 0;
             const pricing = getPricing();
             const pricingText = Object.keys(pricing).map(range =>
                 `• ${range}: Rp ${formatIDR(pricing[range])}`
@@ -3635,7 +3899,8 @@ else if (data.startsWith('claim_gift_')) {
             bot.editMessageText(
                 `📦 *STOCK AVAILABLE*\n\n` +
                 `Links available: ${stock.links?.length || 0}\n` +
-                `Accounts available: ${accountAvailable}\n\n` +
+                `Accounts available: ${accountAvailable}\n` +
+                `GPT Basics available: ${gptAvailable}\n\n` +
                 `💰 Current Prices:\n` +
                 `${pricingText}\n\n` +
                 `🎟️ Use coupon codes for extra discounts!`,
@@ -4945,6 +5210,229 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
 
                 bot.sendMessage(ADMIN_TELEGRAM_ID,
                     `📝 *NEW ACCOUNT ORDER*\n\n` +
+                    `Order ID: #${orderId}\n` +
+                    `Customer: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')}\n` +
+                    `User ID: ${userId}\n` +
+                    `Quantity: ${quantity} account(s)\n` +
+                    `💰 Total: Rp ${formatIDR(totalPrice)}\n` +
+                    `Status: Awaiting Payment\n\n` +
+                    `💡 Waiting for payment proof...`,
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+            }
+
+            delete userStates[chatId];
+        }
+
+        else if (state.state === 'awaiting_gpt_quantity') {
+            const quantity = parseInt(text.replace(/\D/g, ''));
+            const paymentMethod = state.payment_method || 'balance';
+            const gptStock = getGptBasicsStock();
+            const available = gptStock.accounts?.length || 0;
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const selectedQuantity = Math.min(quantity || 0, maxQuantity);
+
+            if (isNaN(quantity) || quantity < 1) {
+                bot.sendMessage(chatId, '❌ Please send a valid number!').catch(() => {});
+                return;
+            }
+
+            if (selectedQuantity !== quantity) {
+                bot.sendMessage(chatId, `⚠️ Maximum you can order now is ${maxQuantity} account(s).`).catch(() => {});
+                return;
+            }
+
+            if (quantity > available) {
+                bot.sendMessage(chatId, `❌ Only ${available} GPT Basics account(s) available right now!`).catch(() => {});
+                return;
+            }
+
+            const totalPrice = quantity * GPT_BASICS_PRICE_IDR;
+            const users = getUsers();
+
+            if (paymentMethod === 'balance') {
+                const balance = getBalance(userId);
+
+                if (balance < totalPrice) {
+                    const shortfall = totalPrice - balance;
+
+                    const keyboard = {
+                        inline_keyboard: [
+                            [{ text: '💵 Top Up via QRIS/Links', callback_data: 'topup_balance' }],
+                            [{ text: '🔙 Back', callback_data: 'buy_gpt_basics' }]
+                        ]
+                    };
+
+                    bot.sendMessage(chatId,
+                        `⚠️ Balance not enough.\n\n` +
+                        `Requested: ${quantity} GPT Basics account(s)\n` +
+                        `Total needed: Rp ${formatIDR(totalPrice)}\n` +
+                        `Current balance: Rp ${formatIDR(balance)}\n` +
+                        `Shortfall: Rp ${formatIDR(shortfall)}\n\n` +
+                        `Top up with QRIS/links then try again.`,
+                        { parse_mode: 'Markdown', reply_markup: keyboard }
+                    ).catch(() => {});
+                    return;
+                }
+
+                updateBalance(userId, -totalPrice);
+
+                const orderId = getNextOrderId();
+                const order = {
+                    order_id: orderId,
+                    user_id: userId,
+                    username: users[userId]?.username || msg.from.username || 'unknown',
+                    quantity: quantity,
+                    total_quantity: quantity,
+                    original_price: GPT_BASICS_PRICE_IDR,
+                    total_price: totalPrice,
+                    status: 'completed',
+                    payment_method: 'balance',
+                    date: new Date().toISOString(),
+                    completed_at: new Date().toISOString(),
+                    product: 'gpt_basic'
+                };
+
+                addOrder(order);
+
+                if (!users[userId]) {
+                    addUser(userId, msg.from);
+                }
+
+                const updatedUsers = getUsers();
+                updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+                updatedUsers[userId].completed_orders = (updatedUsers[userId].completed_orders || 0) + 1;
+                saveJSON(USERS_FILE, updatedUsers);
+
+                const delivery = await deliverGptBasics(userId, orderId, quantity);
+                const newBalance = getBalance(userId);
+
+                if (delivery.success) {
+                    bot.sendMessage(
+                        chatId,
+                        `✅ *GPT BASICS PURCHASED!*\n\n` +
+                        `📋 Order: #${orderId}\n` +
+                        `🔢 Quantity: ${quantity}\n` +
+                        `💵 Paid: Rp ${formatIDR(totalPrice)}\n` +
+                        `💳 Balance left: Rp ${formatIDR(newBalance)}\n\n` +
+                        `🔑 Credentials sent above.`,
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
+                                ]
+                            }
+                        }
+                    ).catch(() => {});
+
+                    bot.sendMessage(ADMIN_TELEGRAM_ID,
+                        `🆕 *GPT BASICS SALE*\n\n` +
+                        `User: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')} (${userId})\n` +
+                        `Order: #${orderId}\n` +
+                        `Qty: ${quantity}\n` +
+                        `Total: Rp ${formatIDR(totalPrice)}\n` +
+                        `Remaining GPT Basics: ${(getGptBasicsStock().accounts || []).length}`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(() => {});
+                } else {
+                    updateBalance(userId, totalPrice);
+                    updateOrder(orderId, { status: 'failed' });
+
+                    bot.sendMessage(
+                        chatId,
+                        `❌ *DELIVERY FAILED*\n\n` +
+                        `Order: #${orderId}\n` +
+                        `Your payment has been refunded.\n\n` +
+                        `Please contact ${ADMIN_USERNAME} for help.`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(() => {});
+                }
+            } else {
+                const orderId = getNextOrderId();
+                const order = {
+                    order_id: orderId,
+                    user_id: userId,
+                    username: users[userId]?.username || state.user?.username || msg.from.username || 'unknown',
+                    quantity: quantity,
+                    total_quantity: quantity,
+                    original_price: GPT_BASICS_PRICE_IDR,
+                    total_price: totalPrice,
+                    status: 'awaiting_payment',
+                    payment_method: 'qris',
+                    date: new Date().toISOString(),
+                    product: 'gpt_basic'
+                };
+
+                addOrder(order);
+
+                if (!users[userId]) {
+                    addUser(userId, state.user || msg.from);
+                }
+
+                const updatedUsers = getUsers();
+                updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+                saveJSON(USERS_FILE, updatedUsers);
+
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                        [{ text: '📝 My Orders', callback_data: 'my_orders' }],
+                        [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                    ]
+                };
+
+                let orderMessage = `✅ *GPT BASICS ORDER CREATED!*\n\n` +
+                    `📋 Order ID: *#${orderId}*\n` +
+                    `🔢 Quantity: ${quantity} account(s)\n` +
+                    `💵 Price per account: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)}\n` +
+                    `💰 Total: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                    `📱 Status: Awaiting Payment\n` +
+                    `⏰ Expires in: ${ORDER_EXPIRY_MINUTES} minutes\n\n`;
+
+                const gopay = getQRIS();
+                if (gopay.file_id) {
+                    bot.sendPhoto(chatId, gopay.file_id, {
+                        caption:
+                            `📱 *PAYMENT METHOD - GOPAY/QRIS*\n\n` +
+                            `Scan this QR code to pay\n` +
+                            `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                            `After payment, send screenshot with:\n` +
+                            `Caption: #${orderId}\n\n` +
+                            `⏰ Order expires in ${ORDER_EXPIRY_MINUTES} minutes`,
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '📱 DM Admin @itsmeaab', url: 'https://t.me/itsmeaab' }]
+                            ]
+                        }
+                    }).catch(() => {});
+                } else {
+                    bot.sendMessage(chatId,
+                        `📱 *PAYMENT INSTRUCTIONS*\n\n` +
+                        `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                        `Contact admin for payment details:`,
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '📱 DM Admin @itsmeaab', url: 'https://t.me/itsmeaab' }]
+                                ]
+                            }
+                        }
+                    ).catch(() => {});
+                }
+
+                orderMessage += `💡 Send payment proof photo with caption: #${orderId}\n` +
+                    `Or contact ${ADMIN_USERNAME} for payment details`;
+
+                bot.sendMessage(chatId, orderMessage, {
+                    parse_mode: 'Markdown',
+                    reply_markup: keyboard
+                }).catch(() => {});
+
+                bot.sendMessage(ADMIN_TELEGRAM_ID,
+                    `📝 *NEW GPT BASICS ORDER*\n\n` +
                     `Order ID: #${orderId}\n` +
                     `Customer: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')}\n` +
                     `User ID: ${userId}\n` +
