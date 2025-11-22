@@ -27,7 +27,7 @@ const ACCOUNT_MESSAGE_LIMIT = 20;
 const MIN_TOPUP_AMOUNT = 0;
 const MAX_TOPUP_AMOUNT = 100000;
 const ACCOUNT_PRICE_IDR = 650;
-const GPT_BASICS_PRICE_IDR = 50;
+const GPT_BASICS_PRICE_IDR = 650;
 const AUTO_BROADCAST_MIN_STOCK = 1;
 
 // File paths
@@ -1094,7 +1094,6 @@ async function deliverGptBasics(userId, orderId, quantity, pricePerAccount = GPT
             `🔢 Quantity: ${quantity}\n` +
             `💵 Total: Rp ${formatIDR(totalPrice)} (${formatIDR(pricePerAccount)} each)\n\n` +
             `🔑 Credentials:\n${credentials}\n\n` +
-            `📥 Access via https://generator.email/ inbox.\n` +
             `📱 Support: ${ADMIN_USERNAME}`;
 
         await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
@@ -3600,7 +3599,6 @@ else if (data.startsWith('claim_gift_')) {
                 `💵 Price: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)} (no bulk)\n` +
                 `📦 Accounts available: ${available}\n\n` +
                 `${statusLine}\n\n` +
-                `🔗 Access via https://generator.email/ inbox.\n` +
                 `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
