@@ -2198,11 +2198,7 @@ bot.on('callback_query', async (query) => {
             const orderId = parseInt(data.replace('verify_payment_', ''));
             const orders = getOrders();
             const order = orders.find(o => o.order_id === orderId);
-            const isAccountOrder =
-                order?.product === 'account' ||
-                order?.product === 'accounts' ||
-                order?.type === 'account' ||
-                order?.type === 'accounts';
+            const isAccountOrder = order?.product === 'account' || order?.type === 'account';
 
             if (!order) {
                 bot.answerCallbackQuery(query.id, {
@@ -2229,7 +2225,7 @@ bot.on('callback_query', async (query) => {
             let delivered = false;
 
             if (isAccountOrder) {
-                const result = await deliverAccounts(order.user_id, orderId, deliveryQuantity);
+                const result = await deliverAccounts(order.user_id, orderId, order.quantity);
                 delivered = result.success;
             } else {
                 delivered = await deliverlinks(order.user_id, orderId, order.quantity, order.bonus_quantity || 0);
