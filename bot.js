@@ -1001,7 +1001,7 @@ async function deliverAccount(userId, orderId = 'N/A') {
             `📋 Order #: ${orderId}\n` +
             `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} (no bulk)\n\n` +
             `🔑 Credentials:\n\`${safeAccount}\`\n\n` +
-            `📥 Inbox access included for verification\n` +
+            `📥 generator.email acess\n` +
             `📱 Support: ${ADMIN_USERNAME}`;
 
         await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
