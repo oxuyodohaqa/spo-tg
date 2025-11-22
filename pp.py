@@ -24,6 +24,25 @@ _  /    __  /_/ /__  /| |_  /      _  / __ __  /_/ /_  /
 # Print the ASCII Art when the script starts
 print(ascii_art)
 
+def generate_user_agent() -> str:
+    """Return a randomized desktop Chrome user-agent per account"""
+    chrome_major = random.randint(110, 141)
+    build = random.randint(0, 5999)
+    patch = random.randint(0, 199)
+    os_tokens = [
+        "Windows NT 10.0; Win64; x64",
+        "Windows NT 10.0; WOW64",
+        "Windows NT 6.3; Win64; x64",
+        "Macintosh; Intel Mac OS X 10_15_7",
+        "X11; Linux x86_64",
+    ]
+    os_token = random.choice(os_tokens)
+    return (
+        f"Mozilla/5.0 ({os_token}) AppleWebKit/537.36 (KHTML, like Gecko) "
+        f"Chrome/{chrome_major}.0.{build}.{patch} Safari/537.36"
+    )
+
+
 class ChatGPTSignupTripleMethod:
     """
     ChatGPT Auto Signup - TRIPLE METHOD VERSION
@@ -61,7 +80,7 @@ class ChatGPTSignupTripleMethod:
     ]
     
     def __init__(self, gmail_user: str, gmail_password: str, alfashop_api_key: str = None,
-                 thread_id: int = 0, method: str = 'alfashop'):
+                 thread_id: int = 0, method: str = 'alfashop', user_agent: Optional[str] = None):
         self.auth_url = "https://auth.openai.com"
         self.chatgpt_url = "https://chatgpt.com"
         
@@ -85,7 +104,7 @@ class ChatGPTSignupTripleMethod:
         )
         
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+            'User-Agent': user_agent or generate_user_agent(),
             'Accept-Language': 'en-US,en;q=0.9',
             'sec-ch-ua': '"Google Chrome";v="141", "Not?A_Brand";v="8", "Chromium";v="141"',
             'sec-ch-ua-mobile': '?0',
@@ -763,7 +782,8 @@ def create_single_account(args):
             gmail_password=gmail_password,
             alfashop_api_key=alfashop_api_key,
             thread_id=thread_id,
-            method=method
+            method=method,
+            user_agent=generate_user_agent()
         )
         
         # Generate unique name for each account
