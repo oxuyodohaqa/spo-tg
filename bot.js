@@ -27,7 +27,7 @@ const ACCOUNT_MESSAGE_LIMIT = 20;
 const MIN_TOPUP_AMOUNT = 0;
 const MAX_TOPUP_AMOUNT = 100000;
 const ACCOUNT_PRICE_IDR = 650;
-const GPT_BASICS_PRICE_IDR = 650;
+const GPT_BASICS_PRICE_IDR = 50;
 const AUTO_BROADCAST_MIN_STOCK = 1;
 
 // File paths
@@ -1094,6 +1094,7 @@ async function deliverGptBasics(userId, orderId, quantity, pricePerAccount = GPT
             `🔢 Quantity: ${quantity}\n` +
             `💵 Total: Rp ${formatIDR(totalPrice)} (${formatIDR(pricePerAccount)} each)\n\n` +
             `🔑 Credentials:\n${credentials}\n\n` +
+            `📥 Access via https://generator.email/ inbox.\n` +
             `📱 Support: ${ADMIN_USERNAME}`;
 
         await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
@@ -1751,7 +1752,7 @@ bot.onText(/\/start/, (msg) => {
             inline_keyboard: [
                 [{ text: '🎵 Order Spotify', callback_data: 'order' }],
                 [{ text: '🔑 Buy Account (Rp 650)', callback_data: 'buy_account' }],
-                [{ text: '🤖 Buy GPT Basics', callback_data: 'buy_gpt_basics' }],
+                [{ text: `🤖 Buy GPT Basics (Rp ${formatIDR(GPT_BASICS_PRICE_IDR)})`, callback_data: 'buy_gpt_basics' }],
                 [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
                 [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                 [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
@@ -3599,6 +3600,7 @@ else if (data.startsWith('claim_gift_')) {
                 `💵 Price: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)} (no bulk)\n` +
                 `📦 Accounts available: ${available}\n\n` +
                 `${statusLine}\n\n` +
+                `🔗 Access via https://generator.email/ inbox.\n` +
                 `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
@@ -3900,7 +3902,8 @@ else if (data.startsWith('claim_gift_')) {
                 `Accounts available: ${accountAvailable}\n` +
                 `GPT Basics available: ${gptAvailable}\n\n` +
                 `💰 Current Prices:\n` +
-                `${pricingText}\n\n` +
+                `${pricingText}\n` +
+                `🤖 GPT Basics: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)}\n\n` +
                 `🎟️ Use coupon codes for extra discounts!`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
