@@ -2194,11 +2194,16 @@ bot.on('callback_query', async (query) => {
         // ===== PAYMENT VERIFICATION BUTTONS =====
         else if (data.startsWith('verify_payment_')) {
             if (!isAdmin(userId)) return;
-            
+
             const orderId = parseInt(data.replace('verify_payment_', ''));
             const orders = getOrders();
             const order = orders.find(o => o.order_id === orderId);
-            
+            const isAccountOrder =
+                order?.product === 'account' ||
+                order?.product === 'accounts' ||
+                order?.type === 'account' ||
+                order?.type === 'accounts';
+
             if (!order) {
                 bot.answerCallbackQuery(query.id, {
                     text: '❌ Order not found!',
@@ -2213,16 +2218,23 @@ bot.on('callback_query', async (query) => {
             bot.editMessageCaption(
                 `⏳ *PROCESSING PAYMENT...*\n\n` +
                 `Order #${orderId}\n` +
-                `Delivering ${deliveryQuantity} links${bonusNote}...`,
+                `Delivering ${deliveryQuantity} ${isAccountOrder ? 'account(s)' : 'links'}${bonusNote}...`,
                 {
                     chat_id: chatId,
                     message_id: messageId,
                     parse_mode: 'Markdown'
                 }
             ).catch(() => {});
-            
-            const delivered = await deliverlinks(order.user_id, orderId, order.quantity, order.bonus_quantity || 0);
-            
+
+            let delivered = false;
+
+            if (isAccountOrder) {
+                const result = await deliverAccounts(order.user_id, orderId, deliveryQuantity);
+                delivered = result.success;
+            } else {
+                delivered = await deliverlinks(order.user_id, orderId, order.quantity, order.bonus_quantity || 0);
+            }
+
             if (delivered) {
                 updateOrder(orderId, {
                     status: 'completed',
@@ -2244,10 +2256,10 @@ bot.on('callback_query', async (query) => {
                     `👤 @${escapeMarkdown(order.username)}\n` +
                     `📦 ${formatOrderQuantitySummary(order)}\n` +
                     `💰 Rp ${formatIDR(order.total_price)}\n\n` +
-                    `✅ links sent!\n` +
+                    `✅ ${isAccountOrder ? 'Account(s) sent!' : 'links sent!'}\n` +
                     `⏰ ${getCurrentDateTime()}`,
-                    { 
-                        chat_id: chatId, 
+                    {
+                        chat_id: chatId,
                         message_id: messageId,
                         parse_mode: 'Markdown'
                     }
@@ -2257,10 +2269,10 @@ bot.on('callback_query', async (query) => {
                     `❌ *INSUFFICIENT STOCK!*\n\n` +
                     `Order #${orderId}\n` +
                     `Need: ${deliveryQuantity}\n` +
-                    `Available: ${getStock().links.length}\n\n` +
-                    `Add more links!`,
-                    { 
-                        chat_id: chatId, 
+                    `Available: ${isAccountOrder ? (getAccountStock().accounts || []).length : getStock().links.length}\n\n` +
+                    (isAccountOrder ? 'Add more accounts!' : 'Add more links!'),
+                    {
+                        chat_id: chatId,
                         message_id: messageId,
                         parse_mode: 'Markdown'
                     }
