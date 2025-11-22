@@ -121,10 +121,15 @@ function loadJSON(filename, defaultValue = {}) {
     try {
         if (fs.existsSync(filename)) {
             const data = fs.readFileSync(filename, 'utf8');
+            if (data.trim() === '') {
+                saveJSON(filename, defaultValue);
+                return defaultValue;
+            }
             return JSON.parse(data);
         }
     } catch (error) {
         console.error(`⚠️ Error loading ${filename}:`, error.message);
+        saveJSON(filename, defaultValue);
     }
     return defaultValue;
 }
