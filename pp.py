@@ -872,7 +872,19 @@ def get_user_input():
             print("❌ Enter valid number")
 
     # ---------------- Threads ----------------
-    max_workers = max(1, min(10, num_accounts))
+    while True:
+        try:
+            default_threads = num_accounts
+            max_threads_allowed = max(1, num_accounts)
+            prompt = f"How many to run in parallel at once [1-{max_threads_allowed}] (default {default_threads}): "
+            user_threads = input(f"\n⚡ {prompt}").strip()
+            max_workers = default_threads if user_threads == "" else int(user_threads)
+
+            if 1 <= max_workers <= max_threads_allowed:
+                break
+            print(f"❌ Enter number between 1 and {max_threads_allowed}")
+        except ValueError:
+            print("❌ Enter valid number")
 
     # ---------------- Default password logic ----------------
     if method == 'alfashop':
