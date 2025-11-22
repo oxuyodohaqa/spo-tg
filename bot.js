@@ -3661,7 +3661,7 @@ else if (data.startsWith('claim_gift_')) {
 
             bot.editMessageText(
                 `🔢 *ENTER QUANTITY*\n\n` +
-                `📱 Paying via QRIS/links\n` +
+                `📱 Paying via QRIS\n` +
                 `💵 Price: Rp ${formatIDR(ACCOUNT_PRICE_IDR)} per account\n` +
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
@@ -3725,7 +3725,7 @@ else if (data.startsWith('claim_gift_')) {
 
             bot.editMessageText(
                 `🔢 *ENTER QUANTITY*\n\n` +
-                `📱 Paying via QRIS/links\n` +
+                `📱 Paying via QRIS\n` +
                 `💵 Price: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)} per account\n` +
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
@@ -5036,7 +5036,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
 
                     const keyboard = {
                         inline_keyboard: [
-                            [{ text: '💵 Top Up via QRIS/Links', callback_data: 'topup_balance' }],
+                            [{ text: '💵 Top Up via QRIS', callback_data: 'topup_balance' }],
                             [{ text: '🔙 Back', callback_data: 'buy_account' }]
                         ]
                     };
@@ -5047,7 +5047,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                         `Total needed: Rp ${formatIDR(totalPrice)}\n` +
                         `Current balance: Rp ${formatIDR(balance)}\n` +
                         `Shortfall: Rp ${formatIDR(shortfall)}\n\n` +
-                        `Top up with QRIS/links then try again.`,
+                        `Top up with QRIS then try again.`,
                         { parse_mode: 'Markdown', reply_markup: keyboard }
                     ).catch(() => {});
                     return;
@@ -5259,7 +5259,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
 
                     const keyboard = {
                         inline_keyboard: [
-                            [{ text: '💵 Top Up via QRIS/Links', callback_data: 'topup_balance' }],
+                            [{ text: '💵 Top Up via QRIS', callback_data: 'topup_balance' }],
                             [{ text: '🔙 Back', callback_data: 'buy_gpt_basics' }]
                         ]
                     };
@@ -5270,7 +5270,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                         `Total needed: Rp ${formatIDR(totalPrice)}\n` +
                         `Current balance: Rp ${formatIDR(balance)}\n` +
                         `Shortfall: Rp ${formatIDR(shortfall)}\n\n` +
-                        `Top up with QRIS/links then try again.`,
+                        `Top up with QRIS then try again.`,
                         { parse_mode: 'Markdown', reply_markup: keyboard }
                     ).catch(() => {});
                     return;
