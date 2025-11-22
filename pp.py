@@ -5,7 +5,7 @@ import random
 import re
 import cloudscraper
 from typing import Optional, Tuple
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import threading
 
 # Add this section at the top of your script
@@ -872,7 +872,19 @@ def get_user_input():
             print("❌ Enter valid number")
 
     # ---------------- Threads ----------------
-    max_workers = 10
+    while True:
+        try:
+            default_threads = num_accounts
+            max_threads_allowed = max(1, num_accounts)
+            prompt = f"How many to run in parallel at once [1-{max_threads_allowed}] (default {default_threads}): "
+            user_threads = input(f"\n⚡ {prompt}").strip()
+            max_workers = default_threads if user_threads == "" else int(user_threads)
+
+            if 1 <= max_workers <= max_threads_allowed:
+                break
+            print(f"❌ Enter number between 1 and {max_threads_allowed}")
+        except ValueError:
+            print("❌ Enter valid number")
 
     # ---------------- Default password logic ----------------
     if method == 'alfashop':
@@ -913,19 +925,6 @@ def main():
     
     input("\nPress Enter to start...")
     
-    # Prepare tasks
-    tasks = []
-    for i in range(num_accounts):
-        tasks.append((
-            i + 1,
-            GMAIL_USER,
-            GMAIL_APP_PASSWORD,
-            ALFASHOP_API_KEY,
-            method,
-            domain,
-            password
-        ))
-    
     # Start processing
     print(f"\n🚀 Starting creation...")
     print(f"⏰ Started: {time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -936,27 +935,54 @@ def main():
     failed = 0
     results = []
     
+    attempt_counter = 0
+    active_futures = {}
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_task = {executor.submit(create_single_account, task): task for task in tasks}
-        
-        for future in as_completed(future_to_task):
-            try:
-                result = future.result()
-                results.append(result)
-                
-                if result['success']:
-                    successful += 1
-                else:
+        while successful < num_accounts:
+            while len(active_futures) < max_workers and successful < num_accounts:
+                attempt_counter += 1
+                task = (
+                    attempt_counter,
+                    GMAIL_USER,
+                    GMAIL_APP_PASSWORD,
+                    ALFASHOP_API_KEY,
+                    method,
+                    domain,
+                    password
+                )
+                future = executor.submit(create_single_account, task)
+                active_futures[future] = task
+
+            if not active_futures:
+                break
+
+            done, _ = wait(active_futures.keys(), return_when=FIRST_COMPLETED)
+
+            for future in done:
+                active_futures.pop(future, None)
+                try:
+                    result = future.result()
+                    results.append(result)
+
+                    if result.get('success'):
+                        successful += 1
+                    else:
+                        failed += 1
+
+                    total_done = successful + failed
+                    print(f"\n{'='*80}")
+                    print(f"📊 Progress: {successful}/{num_accounts} | ✅ {successful} | ❌ {failed} | Attempts: {total_done}")
+                    print(f"{'='*80}\n")
+
+                except Exception as e:
                     failed += 1
-                
-                total_done = successful + failed
-                print(f"\n{'='*80}")
-                print(f"📊 Progress: {total_done}/{num_accounts} | ✅ {successful} | ❌ {failed}")
-                print(f"{'='*80}\n")
-                
-            except Exception as e:
-                failed += 1
-                print(f"\n❌ Task error: {e}\n")
+                    print(f"\n❌ Task error: {e}\n")
+
+            if successful >= num_accounts:
+                for future in active_futures:
+                    future.cancel()
+                break
     
     elapsed = time.time() - start_time
     
