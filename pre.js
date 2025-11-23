@@ -1368,12 +1368,44 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
         const dob = generateDOB();
         const step = await session.submitPersonalInfo(student, dob, college);
         
-        // ✅ MODIFIED: Don't return early on instant success - continue to force upload
+        // ✅ Handle SSO instant success by waiting for status before deciding on uploads
         let ssoInstantSuccess = false;
         if (step === 'success') {
-            console.log(`[${sessionId}] ⚡ [${countryConfig.flag}] SSO Instant success detected - will force upload files`);
+            console.log(`[${sessionId}] ⚡ [${countryConfig.flag}] SSO instant success detected - waiting for verification before upload`);
             ssoInstantSuccess = true;
-            // Don't return - continue to upload step
+
+            const ssoStatus = await session.checkStatus(CONFIG.verificationTimeout);
+            if (ssoStatus.status === 'SUCCESS') {
+                const spotifyUrl = await session.getSpotifyUrl();
+
+                if (spotifyUrl) {
+                    const result = {
+                        student,
+                        url: spotifyUrl,
+                        type: 'instant_exact',
+                        college: college.name,
+                        fileUsed: null,
+                        uploadAttempt: 0,
+                        waitTime: ssoStatus.waitTime,
+                        ssoForced: false
+                    };
+
+                    saveSpotifyUrl(student, spotifyUrl, session.verificationId, countryConfig, session.getUploadStats());
+                    deleteManager.markStudentSuccess(student.studentId);
+                    collegeMatcher.addSuccess();
+                    statsTracker.recordSuccess(result);
+                    statsTracker.recordCollegeAttempt(college.id, college.name, true);
+                    return result;
+                }
+            } else if (ssoStatus.status === 'REJECTED') {
+                console.log(`[${sessionId}] ❌ [${countryConfig.flag}] SSO rejected before upload`);
+                deleteManager.markStudentRejected(student.studentId);
+                collegeMatcher.addFailure();
+                statsTracker.recordCollegeAttempt(college.id, college.name, false);
+                return null;
+            } else {
+                console.log(`[${sessionId}] ⏳ [${countryConfig.flag}] SSO verification pending — will proceed with upload for safety`);
+            }
         }
         
         if (step === 'error') {
@@ -1385,14 +1417,35 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
             return null;
         }
         
-        // STEP 4: Skip SSO wait and proceed directly to upload
+        // STEP 4: Check SSO status before deciding to upload
         let stepResult = 'docUpload';
         let ssoAlreadySuccess = false;
 
         const preUploadStatus = await session.checkStatus(1);
         if (preUploadStatus.status === 'SUCCESS') {
-            console.log(`[${sessionId}] ⚡ [${countryConfig.flag}] SSO success detected - forcing upload and waiting for verification`);
+            console.log(`[${sessionId}] ✨ [${countryConfig.flag}] SSO success confirmed after submission - no upload needed`);
             ssoAlreadySuccess = true;
+
+            const spotifyUrl = await session.getSpotifyUrl();
+            if (spotifyUrl) {
+                const result = {
+                    student,
+                    url: spotifyUrl,
+                    type: 'already_success_exact',
+                    college: college.name,
+                    fileUsed: null,
+                    uploadAttempt: 0,
+                    waitTime: preUploadStatus.waitTime,
+                    ssoForced: false
+                };
+
+                saveSpotifyUrl(student, spotifyUrl, session.verificationId, countryConfig, session.getUploadStats());
+                deleteManager.markStudentSuccess(student.studentId);
+                collegeMatcher.addSuccess();
+                statsTracker.recordSuccess(result);
+                statsTracker.recordCollegeAttempt(college.id, college.name, true);
+                return result;
+            }
         } else if (preUploadStatus.status === 'REJECTED') {
             console.log(`[${sessionId}] ❌ [${countryConfig.flag}] SSO status shows rejection before upload`);
             deleteManager.markStudentRejected(student.studentId);
@@ -1402,25 +1455,16 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
         }
 
         if (ssoInstantSuccess) {
-            console.log(`[${sessionId}] ⏭️ [${countryConfig.flag}] SSO instant success - skipping wait and forcing upload`);
+            console.log(`[${sessionId}] ⏭️ [${countryConfig.flag}] SSO instant success not finalized — proceeding to upload for verification`);
         } else {
-            console.log(`[${sessionId}] ⏩ [${countryConfig.flag}] Bypassing SSO wait — proceeding directly to upload step`);
+            console.log(`[${sessionId}] ⏩ [${countryConfig.flag}] Proceeding to upload step`);
         }
-        
+
         if (stepResult === 'invalid_college' || stepResult === 'error') {
             console.log(`[${sessionId}] ❌ [${countryConfig.flag}] INVALID COLLEGE or ERROR`);
             deleteManager.markStudentFailed(student.studentId);
             collegeMatcher.addFailure();
             statsTracker.recordFailureReason('invalidCollege');
-            statsTracker.recordCollegeAttempt(college.id, college.name, false);
-            return null;
-        }
-        
-        // ✅ MODIFIED: Force proceed to upload even if SSO succeeded
-        if (stepResult !== 'docUpload' && !ssoInstantSuccess && !ssoAlreadySuccess) {
-            console.log(`[${sessionId}] ❌ [${countryConfig.flag}] Cannot proceed - step: ${stepResult}`);
-            deleteManager.markStudentFailed(student.studentId);
-            collegeMatcher.addFailure();
             statsTracker.recordCollegeAttempt(college.id, college.name, false);
             return null;
         }
