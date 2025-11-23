@@ -28,7 +28,8 @@ const MIN_TOPUP_AMOUNT = 0;
 const MAX_TOPUP_AMOUNT = 100000;
 const ACCOUNT_PRICE_IDR = 650;
 const GPT_BASICS_PRICE_IDR = 50;
-const GPT_INVITE_PRICE_IDR = 650;
+const GPT_INVITE_FW_PRICE_IDR = 15000;
+const GPT_INVITE_NW_PRICE_IDR = 6000;
 const ALIGHT_MOTION_PRICE_IDR = 4000;
 const ALIGHT_MOTION_PACK5_PRICE_IDR = 15000;
 const ALIGHT_MOTION_PACK50_PRICE_IDR = 50000;
@@ -71,7 +72,11 @@ const DEFAULT_PRICING = {
 const DEFAULT_PRODUCT_SETTINGS = {
     account: { price: ACCOUNT_PRICE_IDR, label: 'Spotify Verified Accounts' },
     gpt_basic: { price: GPT_BASICS_PRICE_IDR, label: 'GPT Basics Accounts' },
-    gpt_invite: { price: GPT_INVITE_PRICE_IDR, label: 'GPT via Invite Accounts' },
+    gpt_invite: {
+        fw_price: GPT_INVITE_FW_PRICE_IDR,
+        nw_price: GPT_INVITE_NW_PRICE_IDR,
+        label: 'GPT via Invite Accounts'
+    },
     alight_motion: {
         price: ALIGHT_MOTION_PRICE_IDR,
         pack5_price: ALIGHT_MOTION_PACK5_PRICE_IDR,
@@ -500,10 +505,27 @@ function getGptBasicsPrice() {
     return !isNaN(price) && price > 0 ? price : GPT_BASICS_PRICE_IDR;
 }
 
-function getGptInvitePrice() {
+function getGptInvitePrices() {
     const settings = getProductSettings();
-    const price = parseInt(settings?.gpt_invite?.price);
-    return !isNaN(price) && price > 0 ? price : GPT_INVITE_PRICE_IDR;
+    const fw = parseInt(settings?.gpt_invite?.fw_price);
+    const nw = parseInt(settings?.gpt_invite?.nw_price);
+    const legacy = parseInt(settings?.gpt_invite?.price);
+
+    return {
+        fw: !isNaN(fw) && fw > 0 ? fw : (!isNaN(legacy) && legacy > 0 ? legacy : GPT_INVITE_FW_PRICE_IDR),
+        nw: !isNaN(nw) && nw > 0 ? nw : (!isNaN(legacy) && legacy > 0 ? legacy : GPT_INVITE_NW_PRICE_IDR),
+        label: getProductLabel('gpt_invite', 'GPT via Invite Accounts')
+    };
+}
+
+function getGptInvitePrice(variant = 'nw') {
+    const prices = getGptInvitePrices();
+    return variant === 'fw' ? prices.fw : prices.nw;
+}
+
+function formatGptInvitePriceSummary() {
+    const prices = getGptInvitePrices();
+    return `FW Rp ${formatIDR(prices.fw)} | NW Rp ${formatIDR(prices.nw)}`;
 }
 
 function getAlightMotionPrice() {
@@ -2104,7 +2126,7 @@ bot.onText(/\/start/, (msg) => {
                 `🎵 Spotify Student PREMIUM\n` +
                 `🔑 ${escapeMarkdown(getProductLabel('account', 'Verified Spotify Account'))}: Rp ${formatIDR(getAccountPrice())}\n` +
                 `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics Account'))}: Rp ${formatIDR(getGptBasicsPrice())}\n` +
-                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: Rp ${formatIDR(getGptInvitePrice())}\n` +
+                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: ${formatGptInvitePriceSummary()}\n` +
                 `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Account'))}: ${formatAlightPriceSummary()}\n` +
                 `🧠 ${escapeMarkdown(getPerplexityConfig().label)}: ${formatPerplexityPriceSummary()}\n` +
                 `💳 Balance: Rp ${formatIDR(balance)}\n` +
@@ -3467,7 +3489,7 @@ else if (data.startsWith('claim_gift_')) {
             const summary = [
                 `🔑 ${escapeMarkdown(getProductLabel('account', 'Spotify Accounts'))}: Rp ${formatIDR(getAccountPrice())}`,
                 `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics'))}: Rp ${formatIDR(getGptBasicsPrice())}`,
-                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: Rp ${formatIDR(getGptInvitePrice())}`,
+                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: ${formatGptInvitePriceSummary()}`,
                 `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion'))}: ${formatAlightPriceSummary()}`,
                 `🧠 ${escapeMarkdown(settings.perplexity?.label || 'Perplexity AI')}: ${formatPerplexityPriceSummary()}`
             ].join('\n');
@@ -3533,7 +3555,7 @@ else if (data.startsWith('claim_gift_')) {
             const summary = [
                 `🔑 ${escapeMarkdown(getProductLabel('account', 'Spotify Accounts'))}: Rp ${formatIDR(getAccountPrice())}`,
                 `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics'))}: Rp ${formatIDR(getGptBasicsPrice())}`,
-                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: Rp ${formatIDR(getGptInvitePrice())}`,
+                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: ${formatGptInvitePriceSummary()}`,
                 `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion'))}: ${formatAlightPriceSummary()}`,
                 `🧠 ${escapeMarkdown(settings.perplexity?.label || 'Perplexity AI')}: ${formatPerplexityPriceSummary()}`
             ].join('\n');
@@ -4333,11 +4355,45 @@ else if (data.startsWith('claim_gift_')) {
 
             const keyboard = {
                 inline_keyboard: [
+                    [{ text: `🛡️ Full Warranty (Rp ${formatIDR(getGptInvitePrice('fw'))})`, callback_data: 'choose_gpt_invite_fw' }],
+                    [{ text: `⚡ No Warranty (Rp ${formatIDR(getGptInvitePrice('nw'))})`, callback_data: 'choose_gpt_invite_nw' }],
+                    [{ text: '🔙 Back', callback_data: 'menu_gpt' }]
+                ]
+            };
+
+            const statusLine = available === 0
+                ? '❌ Out of stock! Add more GPT via invite first.'
+                : canBuy
+                    ? '✅ Pick your warranty option below to proceed.'
+                    : '⚠️ Not enough balance. Please top up.';
+
+            bot.editMessageText(
+                `📩 *BUY GPT VIA INVITE*\n\n` +
+                `💵 Prices: FW Rp ${formatIDR(getGptInvitePrice('fw'))} | NW Rp ${formatIDR(getGptInvitePrice('nw'))}\n` +
+                `📦 Accounts available: ${available}\n\n` +
+                `${statusLine}\n\n` +
+                `🛡️ FW = Full warranty provided.\n` +
+                `⚡ NW = No warranty. Accounts provided instantly.\n` +
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'choose_gpt_invite_fw' || data === 'choose_gpt_invite_nw') {
+            const variant = data === 'choose_gpt_invite_fw' ? 'fw' : 'nw';
+            const gptInviteStock = getGptInviteStock();
+            const available = gptInviteStock.accounts?.length || 0;
+            const canBuy = available > 0;
+
+            userStates[chatId] = { ...userStates[chatId], selected_variant: variant };
+
+            const keyboard = {
+                inline_keyboard: [
                     [{ text: '💳 Pay with Balance', callback_data: 'pay_gpt_invite_balance' }],
                     [{ text: '📱 Pay via QRIS', callback_data: 'pay_gpt_invite_qris' }],
                     [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                     [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
-                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                    [{ text: '🔙 Back', callback_data: 'buy_gpt_invite' }]
                 ]
             };
 
@@ -4348,8 +4404,8 @@ else if (data.startsWith('claim_gift_')) {
                     : '⚠️ Not enough balance. Please top up.';
 
             bot.editMessageText(
-                `📩 *BUY GPT VIA INVITE*\n\n` +
-                `💵 Price: Rp ${formatIDR(getGptInvitePrice())} (no bulk)\n` +
+                `📩 *GPT VIA INVITE (${variant === 'fw' ? 'FULL WARRANTY' : 'NO WARRANTY'})*\n\n` +
+                `💵 Price: Rp ${formatIDR(getGptInvitePrice(variant))} (no bulk)\n` +
                 `📦 Accounts available: ${available}\n\n` +
                 `${statusLine}\n\n` +
                 `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
@@ -4798,6 +4854,7 @@ else if (data.startsWith('claim_gift_')) {
             const gptInviteStock = getGptInviteStock();
             const available = gptInviteStock.accounts?.length || 0;
             const maxQuantity = Math.max(1, Math.min(50, available));
+            const variant = (userStates[chatId] || {}).selected_variant === 'fw' ? 'fw' : 'nw';
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -4812,13 +4869,14 @@ else if (data.startsWith('claim_gift_')) {
                 payment_method: 'balance',
                 userId: userId,
                 user: query.from,
-                max_quantity: maxQuantity
+                max_quantity: maxQuantity,
+                variant
             };
 
             bot.editMessageText(
                 `🔢 *ENTER QUANTITY*\n\n` +
                 `💳 Paying with balance\n` +
-                `💵 Price: Rp ${formatIDR(getGptInvitePrice())} per account\n` +
+                `💵 Price: Rp ${formatIDR(getGptInvitePrice(variant))} per account\n` +
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
                 `Send the number of GPT via invite accounts you want to buy.`,
@@ -4830,6 +4888,7 @@ else if (data.startsWith('claim_gift_')) {
             const gptInviteStock = getGptInviteStock();
             const available = gptInviteStock.accounts?.length || 0;
             const maxQuantity = Math.max(1, Math.min(50, available));
+            const variant = (userStates[chatId] || {}).selected_variant === 'fw' ? 'fw' : 'nw';
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -4844,13 +4903,14 @@ else if (data.startsWith('claim_gift_')) {
                 payment_method: 'qris',
                 userId: userId,
                 user: query.from,
-                max_quantity: maxQuantity
+                max_quantity: maxQuantity,
+                variant
             };
 
             bot.editMessageText(
                 `🔢 *ENTER QUANTITY*\n\n` +
                 `📱 Paying via QRIS\n` +
-                `💵 Price: Rp ${formatIDR(getGptInvitePrice())} per account\n` +
+                `💵 Price: Rp ${formatIDR(getGptInvitePrice(variant))} per account\n` +
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
                 `Send the number of GPT via invite accounts you want to buy.`,
@@ -5713,7 +5773,7 @@ else if (data.startsWith('claim_gift_')) {
             const keyboard = {
                 inline_keyboard: [
                     [{ text: `🤖 ${getProductLabel('gpt_basic', 'GPT Basics Accounts')} (Rp ${formatIDR(getGptBasicsPrice())})`, callback_data: 'buy_gpt_basics' }],
-                    [{ text: `📩 ${getProductLabel('gpt_invite', 'GPT via Invite')} (Rp ${formatIDR(getGptInvitePrice())})`, callback_data: 'buy_gpt_invite' }],
+                    [{ text: `📩 ${getProductLabel('gpt_invite', 'GPT via Invite')} (${formatGptInvitePriceSummary()})`, callback_data: 'buy_gpt_invite' }],
                     [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
@@ -9791,6 +9851,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
         else if (state.state === 'awaiting_gpt_invite_quantity') {
             const quantity = parseInt(text.replace(/\D/g, ''));
             const paymentMethod = state.payment_method || 'balance';
+            const variant = state.variant === 'fw' ? 'fw' : 'nw';
             const gptInviteStock = getGptInviteStock();
             const available = gptInviteStock.accounts?.length || 0;
             const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
@@ -9811,7 +9872,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 return;
             }
 
-            const gptInvitePrice = getGptInvitePrice();
+            const gptInvitePrice = getGptInvitePrice(variant);
             const totalPrice = quantity * gptInvitePrice;
             const users = getUsers();
 
@@ -9855,7 +9916,8 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                     payment_method: 'balance',
                     date: new Date().toISOString(),
                     completed_at: new Date().toISOString(),
-                    product: 'gpt_invite'
+                    product: 'gpt_invite',
+                    variant
                 };
 
                 addOrder(order);
@@ -9877,6 +9939,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                         chatId,
                         `✅ *GPT VIA INVITE PURCHASED!*\n\n` +
                         `📋 Order: #${orderId}\n` +
+                        `🛡️ Type: ${variant === 'fw' ? 'Full Warranty' : 'No Warranty'}\n` +
                         `🔢 Quantity: ${quantity}\n` +
                         `💵 Paid: Rp ${formatIDR(totalPrice)}\n` +
                         `💳 Balance left: Rp ${formatIDR(newBalance)}\n\n` +
@@ -9903,7 +9966,8 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 status: 'awaiting_payment',
                 payment_method: 'qris',
                 date: new Date().toISOString(),
-                product: 'gpt_invite'
+                product: 'gpt_invite',
+                variant
             };
 
             addOrder(order);
@@ -9917,6 +9981,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 `📩 *PAYMENT NEEDED*\n\n` +
                 `📋 Order ID: #${orderId}\n` +
                 `Product: GPT via invite\n` +
+                `Type: ${variant === 'fw' ? 'Full Warranty' : 'No Warranty'}\n` +
                 `Quantity: ${quantity}\n` +
                 `Total: Rp ${formatIDR(totalPrice)}\n\n` +
                 `📱 Scan QRIS then send screenshot with caption: #${orderId}\n` +
@@ -9950,6 +10015,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 `Order ID: #${orderId}\n` +
                 `Customer: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')}\n` +
                 `User ID: ${userId}\n` +
+                `Type: ${variant === 'fw' ? 'Full Warranty' : 'No Warranty'}\n` +
                 `Quantity: ${quantity}\n` +
                 `Total: Rp ${formatIDR(totalPrice)}\n` +
                 `Status: Awaiting Payment`,
