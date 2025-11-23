@@ -195,11 +195,11 @@ function updateGptBasicsStock(accounts = []) {
 }
 
 function getPerplexityStock() {
-    return loadJSON(PERPLEXITY_FILE, { accounts: [] });
+    return loadJSON(PERPLEXITY_FILE, { links: [] });
 }
 
-function updatePerplexityStock(accounts = []) {
-    saveJSON(PERPLEXITY_FILE, { accounts });
+function updatePerplexityStock(links = []) {
+    saveJSON(PERPLEXITY_FILE, { links });
 }
 
 function updateStock(quantity, links = null) {
@@ -1120,15 +1120,15 @@ async function deliverPerplexity(userId, orderId, quantity, pricePerAccount = PE
     try {
         const stock = getPerplexityStock();
 
-        if (!stock.accounts || stock.accounts.length < quantity) {
-            return { success: false, message: '❌ Not enough Perplexity AI accounts available to deliver!' };
+        if (!stock.links || stock.links.length < quantity) {
+            return { success: false, message: '❌ Not enough Perplexity AI links available to deliver!' };
         }
 
-        const delivered = stock.accounts.splice(0, quantity);
-        updatePerplexityStock(stock.accounts);
+        const delivered = stock.links.splice(0, quantity);
+        updatePerplexityStock(stock.links);
 
         const credentials = delivered
-            .map(acc => `• \`${escapeMarkdown(acc)}\``)
+            .map(link => `• ${escapeMarkdown(link)}`)
             .join('\n');
 
         const totalPrice = quantity * pricePerAccount;
@@ -1138,8 +1138,7 @@ async function deliverPerplexity(userId, orderId, quantity, pricePerAccount = PE
             `📋 Order #: ${orderId}\n` +
             `🔢 Quantity: ${quantity}\n` +
             `💵 Total: Rp ${formatIDR(totalPrice)} (${formatIDR(pricePerAccount)} each)\n\n` +
-            `🔑 Credentials:\n${credentials}\n\n` +
-            `📥 Access via https://perplexity.ai\n` +
+            `🔗 Links:\n${credentials}\n\n` +
             `📱 Support: ${ADMIN_USERNAME}`;
 
         await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
@@ -1147,7 +1146,7 @@ async function deliverPerplexity(userId, orderId, quantity, pricePerAccount = PE
         return { success: true, delivered };
     } catch (error) {
         console.error('Error delivering Perplexity AI:', error.message);
-        return { success: false, message: '❌ Failed to deliver Perplexity AI account(s).' };
+        return { success: false, message: '❌ Failed to deliver Perplexity AI link(s).' };
     }
 }
 
@@ -1212,9 +1211,9 @@ function broadcastGptBasicsRestock(addedCount, totalCount) {
 
 function broadcastPerplexityRestock(addedCount, totalCount) {
     const message = [
-        '🧠 *PERPLEXITY AI ACCOUNTS RESTOCKED!*',
-        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
-        `🔑 Total Stock: *${totalCount}* ready to claim`,
+        '🧠 *PERPLEXITY LINKS RESTOCKED!*',
+        `📤 Added: *${addedCount}* link${addedCount > 1 ? 's' : ''}`,
+        `🔗 Total Stock: *${totalCount}* ready to claim`,
         '',
         `💵 Price: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)} (no bulk)`,
         '⚡ Order now before stock runs out!'
@@ -1789,7 +1788,7 @@ bot.onText(/\/start/, (msg) => {
                 `• Links: ${stock.links.length}\n` +
                 `• Accounts: ${accountStock.accounts?.length || 0}\n` +
                 `• GPT Basics: ${gptStock.accounts?.length || 0}\n` +
-                `• Perplexity: ${perplexityStock.accounts?.length || 0}\n` +
+                `• Perplexity: ${perplexityStock.links?.length || 0}\n` +
                 `• Pending Top-ups: ${pendingTopups.length}\n\n` +
                 `📅 ${getCurrentDateTime()}`,
                 { parse_mode: 'Markdown', reply_markup: keyboard }
@@ -1804,7 +1803,7 @@ bot.onText(/\/start/, (msg) => {
         const perplexityStock = getPerplexityStock();
         const accountAvailable = accountStock.accounts?.length || 0;
         const gptAvailable = gptStock.accounts?.length || 0;
-        const perplexityAvailable = perplexityStock.accounts?.length || 0;
+        const perplexityAvailable = perplexityStock.links?.length || 0;
         const linkAvailable = stock.links?.length || 0;
         const pricing = getPricing();
         const pricingText = Object.keys(pricing).slice(0, 3).map(range =>
@@ -1813,14 +1812,11 @@ bot.onText(/\/start/, (msg) => {
         
         const keyboard = {
             inline_keyboard: [
-                [{ text: '🎵 Order Spotify', callback_data: 'order' }],
-                [{ text: '🔑 Buy Account (Rp 650)', callback_data: 'buy_account' }],
-                [{ text: `🤖 Buy GPT Basics (Rp ${formatIDR(GPT_BASICS_PRICE_IDR)})`, callback_data: 'buy_gpt_basics' }],
-                [{ text: `🧠 Buy Perplexity AI (Rp ${formatIDR(PERPLEXITY_PRICE_IDR)})`, callback_data: 'buy_perplexity' }],
-                [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
-                [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
+                [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
+                [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
+                [{ text: `🧠 Perplexity AI (Rp ${formatIDR(PERPLEXITY_PRICE_IDR)})`, callback_data: 'buy_perplexity' }],
+                [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
                 [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
-                [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
                 [{ text: '📦 Stock', callback_data: 'check_stock' }],
                 [{ text: '📝 My Orders', callback_data: 'my_orders' }],
                 [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
@@ -1838,7 +1834,7 @@ bot.onText(/\/start/, (msg) => {
                 `📦 Stock: ${linkAvailable} links\n` +
                 `🔑 Accounts in stock: ${accountAvailable}\n` +
                 `🤖 GPT Basics in stock: ${gptAvailable}\n` +
-                `🧠 Perplexity in stock: ${perplexityAvailable}\n\n` +
+                `🧠 Perplexity links in stock: ${perplexityAvailable}\n\n` +
                 `💰 *Pricing:*\n` +
                 `${pricingText}\n\n` +
             `🎁 Daily bonus available!\n` +
@@ -2176,14 +2172,14 @@ bot.on('document', (msg) => {
                                 return;
                             } else if (isPerplexityUpload) {
                                 const perplexityStock = getPerplexityStock();
-                                const merged = [...(perplexityStock.accounts || []), ...lines];
+                                const merged = [...(perplexityStock.links || []), ...lines];
                                 updatePerplexityStock(merged);
 
                                 broadcastPerplexityRestock(lines.length, merged.length).catch(() => {});
 
                                 bot.editMessageText(
-                                    `✅ *PERPLEXITY AI UPLOADED!*\n\n` +
-                                    `📤 Added: ${lines.length} accounts\n` +
+                                    `✅ *PERPLEXITY LINKS UPLOADED!*\n\n` +
+                                    `📤 Added: ${lines.length} links\n` +
                                     `🧠 Total Perplexity: ${merged.length}\n\n` +
                                     `Thank you!`,
                                     {
@@ -3413,7 +3409,7 @@ else if (data.startsWith('claim_gift_')) {
             if (!isAdmin(userId)) return;
 
             const perplexityStock = getPerplexityStock();
-            const available = perplexityStock.accounts?.length || 0;
+            const available = perplexityStock.links?.length || 0;
 
             const keyboard = {
                 inline_keyboard: [
@@ -3425,7 +3421,7 @@ else if (data.startsWith('claim_gift_')) {
 
             bot.editMessageText(
                 `🧠 *PERPLEXITY AI INVENTORY*\n\n` +
-                `📦 Accounts available: ${available}\n\n` +
+                `📦 Links available: ${available}\n\n` +
                 `Use the options below to upload or check stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
@@ -3471,12 +3467,11 @@ else if (data.startsWith('claim_gift_')) {
             userStates[chatId] = { state: 'awaiting_perplexity_upload' };
 
             bot.sendMessage(chatId,
-                `📤 *UPLOAD PERPLEXITY AI*\n\n` +
-                `Send a .txt file now with one credential per line.\n\n` +
+                `📤 *UPLOAD PERPLEXITY LINKS*\n\n` +
+                `Send a .txt file now with one link per line.\n\n` +
                 `Example:\n` +
-                `email:password\n` +
-                `user|pass\n\n` +
-                `Keep each Perplexity AI account on its own line.\n` +
+                `https://www.perplexity.ai/join/p/redeem/XXXXX\n\n` +
+                `Keep each Perplexity link on its own line.\n` +
                 `💡 Uploads auto-broadcast the restock to users.`,
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
@@ -3510,10 +3505,10 @@ else if (data.startsWith('claim_gift_')) {
             if (!isAdmin(userId)) return;
 
             const perplexityStock = getPerplexityStock();
-            const available = perplexityStock.accounts?.length || 0;
+            const available = perplexityStock.links?.length || 0;
 
             bot.answerCallbackQuery(query.id, {
-                text: `📦 Perplexity available: ${available}`,
+                text: `📦 Perplexity links available: ${available}`,
                 show_alert: true
             }).catch(() => {});
         }
@@ -3747,7 +3742,7 @@ else if (data.startsWith('claim_gift_')) {
 
         else if (data === 'buy_perplexity') {
             const perplexityStock = getPerplexityStock();
-            const available = perplexityStock.accounts?.length || 0;
+            const available = perplexityStock.links?.length || 0;
             const canBuy = available > 0;
 
             const keyboard = {
@@ -3761,7 +3756,7 @@ else if (data.startsWith('claim_gift_')) {
             };
 
             const statusLine = available === 0
-                ? '❌ Out of stock! Add more Perplexity accounts first.'
+                ? '❌ Out of stock! Add more Perplexity links first.'
                 : canBuy
                     ? '✅ Choose payment method below.'
                     : '⚠️ Not enough balance. Please top up.';
@@ -3769,10 +3764,10 @@ else if (data.startsWith('claim_gift_')) {
             bot.editMessageText(
                 `🧠 *BUY PERPLEXITY AI*\n\n` +
                 `💵 Price: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)} (no bulk)\n` +
-                `📦 Accounts available: ${available}\n\n` +
+                `📦 Links available: ${available}\n\n` +
                 `${statusLine}\n\n` +
                 `🔗 Access via https://perplexity.ai\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} link(s) depending on stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -3907,7 +3902,7 @@ else if (data.startsWith('claim_gift_')) {
 
         else if (data === 'pay_perplexity_balance' || data === 'confirm_buy_perplexity') {
             const perplexityStock = getPerplexityStock();
-            const available = perplexityStock.accounts?.length || 0;
+            const available = perplexityStock.links?.length || 0;
             const maxQuantity = Math.max(1, Math.min(50, available));
 
             if (available === 0) {
@@ -3929,17 +3924,17 @@ else if (data.startsWith('claim_gift_')) {
             bot.editMessageText(
                 `🔢 *ENTER QUANTITY*\n\n` +
                 `💳 Paying with balance\n` +
-                `💵 Price: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)} per account\n` +
+                `💵 Price: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)} per link\n` +
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of Perplexity AI accounts you want to buy.`,
+                `Send the number of Perplexity AI links you want to buy.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
             ).catch(() => {});
         }
 
         else if (data === 'pay_perplexity_qris') {
             const perplexityStock = getPerplexityStock();
-            const available = perplexityStock.accounts?.length || 0;
+            const available = perplexityStock.links?.length || 0;
             const maxQuantity = Math.max(1, Math.min(50, available));
 
             if (available === 0) {
@@ -3961,10 +3956,10 @@ else if (data.startsWith('claim_gift_')) {
             bot.editMessageText(
                 `🔢 *ENTER QUANTITY*\n\n` +
                 `📱 Paying via QRIS\n` +
-                `💵 Price: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)} per account\n` +
+                `💵 Price: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)} per link\n` +
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of Perplexity AI accounts you want to buy.`,
+                `Send the number of Perplexity AI links you want to buy.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
             ).catch(() => {});
         }
@@ -4047,7 +4042,7 @@ else if (data.startsWith('claim_gift_')) {
                 `💰 *BUY WITH BALANCE*\n\n` +
                 `Your Balance: Rp ${formatIDR(balance)}\n` +
                 `Stock: ${stock.current_stock} links\n` +
-                `Min Price: Rp ${formatIDR(firstPrice)}/account\n\n` +
+                `Min Price: Rp ${formatIDR(firstPrice)}/link\n\n` +
                 `${canBuyWithBalance ? '✅ Ready to order!' : '❌ Insufficient balance or out of stock\n\n💡 Top up to add balance!'}`,
             { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
@@ -4089,7 +4084,86 @@ else if (data.startsWith('claim_gift_')) {
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
             ).catch(() => {});
         }
-        
+
+        else if (data === 'menu_spotify') {
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '🎵 Order Spotify', callback_data: 'order' }],
+                    [{ text: '🔑 Buy Account (Rp 650)', callback_data: 'buy_account' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🎵 *SPOTIFY OPTIONS*\n\n` +
+                `Choose between ordering links or buying ready accounts.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'menu_gpt') {
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: `🤖 GPT Basics (Rp ${formatIDR(GPT_BASICS_PRICE_IDR)})`, callback_data: 'buy_gpt_basics' }],
+                    [{ text: '📩 GPT via Invite', callback_data: 'gpt_invite_info' }],
+                    [{ text: '🎬 Alight Motion Accounts', callback_data: 'alight_motion_info' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🤖 *GPT OPTIONS*\n\n` +
+                `Pick how you want your GPT access delivered.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'gpt_invite_info') {
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '🔙 Back', callback_data: 'menu_gpt' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `📩 *GPT VIA INVITE*\n\n` +
+                `Send your GPT invite details here and the admin will process them.\n` +
+                `You can forward the invite message or paste the email/link.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'alight_motion_info') {
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '🔙 Back', callback_data: 'menu_gpt' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🎬 *ALIGHT MOTION ACCOUNTS*\n\n` +
+                `Send your request to the admin to receive an Alight Motion account invite.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'menu_balance') {
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                    [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
+                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `💰 *BALANCE & TOP UP*\n\n` +
+                `Review your balance, spend it, or add more.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
         else if (data === 'check_balance') {
             const balance = getBalance(userId);
             const canClaimNow = canClaim(userId);
@@ -4119,6 +4193,8 @@ else if (data.startsWith('claim_gift_')) {
             const accountAvailable = accountStock.accounts?.length || 0;
             const gptStock = getGptBasicsStock();
             const gptAvailable = gptStock.accounts?.length || 0;
+            const perplexityStock = getPerplexityStock();
+            const perplexityAvailable = perplexityStock.links?.length || 0;
             const pricing = getPricing();
             const pricingText = Object.keys(pricing).map(range =>
                 `• ${range}: Rp ${formatIDR(pricing[range])}`
@@ -4135,7 +4211,8 @@ else if (data.startsWith('claim_gift_')) {
                 `📦 *STOCK AVAILABLE*\n\n` +
                 `Links available: ${stock.links?.length || 0}\n` +
                 `Accounts available: ${accountAvailable}\n` +
-                `GPT Basics available: ${gptAvailable}\n\n` +
+                `GPT Basics available: ${gptAvailable}\n` +
+                `Perplexity links available: ${perplexityAvailable}\n\n` +
                 `💰 Current Prices:\n` +
                 `${pricingText}\n` +
                 `🤖 GPT Basics: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)}\n\n` +
@@ -4282,13 +4359,12 @@ else if (data.startsWith('claim_gift_')) {
             
             const keyboard = {
                 inline_keyboard: [
-                    [{ text: '🎵 Order Spotify', callback_data: 'order' }],
-                    [{ text: '🔑 Buy Account (Rp 650)', callback_data: 'buy_account' }],
-                    [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
-                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
+                    [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
+                    [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
+                    [{ text: `🧠 Perplexity AI (Rp ${formatIDR(PERPLEXITY_PRICE_IDR)})`, callback_data: 'buy_perplexity' }],
+                    [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
                     [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
                     [{ text: '🎁 Bonus Deals', callback_data: 'view_bonus_deals' }],
-                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
                     [{ text: '📦 Stock', callback_data: 'check_stock' }],
                     [{ text: '📝 My Orders', callback_data: 'my_orders' }],
                     [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
@@ -5029,7 +5105,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const quantity = parseInt(text.replace(/\D/g, ''));
             const paymentMethod = state.payment_method || 'balance';
             const perplexityStock = getPerplexityStock();
-            const available = perplexityStock.accounts?.length || 0;
+            const available = perplexityStock.links?.length || 0;
             const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
             const selectedQuantity = Math.min(quantity || 0, maxQuantity);
 
@@ -5039,12 +5115,12 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             }
 
             if (selectedQuantity !== quantity) {
-                bot.sendMessage(chatId, `⚠️ Maximum you can order now is ${maxQuantity} account(s).`).catch(() => {});
+                bot.sendMessage(chatId, `⚠️ Maximum you can order now is ${maxQuantity} link(s).`).catch(() => {});
                 return;
             }
 
             if (quantity > available) {
-                bot.sendMessage(chatId, `❌ Only ${available} Perplexity AI account(s) available right now!`).catch(() => {});
+                bot.sendMessage(chatId, `❌ Only ${available} Perplexity AI link(s) available right now!`).catch(() => {});
                 return;
             }
 
@@ -5066,7 +5142,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
 
                     bot.sendMessage(chatId,
                         `⚠️ Balance not enough.\n\n` +
-                        `Requested: ${quantity} Perplexity AI account(s)\n` +
+                        `Requested: ${quantity} Perplexity AI link(s)\n` +
                         `Total needed: Rp ${formatIDR(totalPrice)}\n` +
                         `Current balance: Rp ${formatIDR(balance)}\n` +
                         `Shortfall: Rp ${formatIDR(shortfall)}\n\n` +
@@ -5133,7 +5209,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                         `Order: #${orderId}\n` +
                         `Qty: ${quantity}\n` +
                         `Total: Rp ${formatIDR(totalPrice)}\n` +
-                        `Remaining Perplexity: ${(getPerplexityStock().accounts || []).length}`,
+                        `Remaining Perplexity: ${(getPerplexityStock().links || []).length}`,
                         { parse_mode: 'Markdown' }
                     ).catch(() => {});
                 } else {
