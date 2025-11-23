@@ -997,13 +997,21 @@ class VerificationSession {
                     }
                     return 'success';
                 }
-                
+
                 if (this.currentStep === 'docUpload') {
                     console.log(`[${this.id}] ✅ [${this.countryConfig.flag}] Ready for document upload!`);
                     if (collegeMatcher && this.submittedCollegeId) {
                         collegeMatcher.markCollegeAsWorking(this.submittedCollegeId);
                     }
                     return 'docUpload';
+                }
+
+                if (this.currentStep === 'sso') {
+                    console.log(`[${this.id}] 🚦 [${this.countryConfig.flag}] SSO step detected - proceed with force upload`);
+                    if (collegeMatcher && this.submittedCollegeId) {
+                        collegeMatcher.markCollegeAsWorking(this.submittedCollegeId);
+                    }
+                    return 'sso';
                 }
                 
                 if (this.currentStep === 'error' || (data.errorIds && data.errorIds.length > 0)) {
@@ -1388,17 +1396,28 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
         // STEP 4: Wait for step progression (skip wait when SSO already succeeded)
         let stepResult = 'docUpload';
         let ssoAlreadySuccess = false;
+        let ssoForceUpload = false;
 
         if (ssoInstantSuccess) {
-            console.log(`[${sessionId}] ⏭️ [${countryConfig.flag}] SSO instant success - skipping wait and forcing upload`);
+            console.log(`[${sessionId}] ⏭️ [${countryConfig.flag}] SSO instant success - skipping wait and forcing upload via docUpload endpoint`);
+            ssoForceUpload = true;
+            stepResult = 'docUpload';
         } else {
             stepResult = await session.waitForCorrectStep(6, collegeMatcher);
 
             // ✅ MODIFIED: Don't return early on SSO success - continue to force upload
             if (stepResult === 'success') {
-                console.log(`[${sessionId}] ⚡ [${countryConfig.flag}] SSO Already success detected - will force upload files`);
+                console.log(`[${sessionId}] ⚡ [${countryConfig.flag}] SSO Already success detected - will force upload files to docUpload endpoint`);
                 ssoAlreadySuccess = true;
+                ssoForceUpload = true;
+                stepResult = 'docUpload';
                 // Don't return - continue to upload step
+            }
+
+            if (stepResult === 'sso') {
+                console.log(`[${sessionId}] ⚠️ [${countryConfig.flag}] SSO step pending - forcing docUpload call without additional wait`);
+                ssoForceUpload = true;
+                stepResult = 'docUpload';
             }
         }
         
@@ -1412,21 +1431,21 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
         }
         
         // ✅ MODIFIED: Force proceed to upload even if SSO succeeded
-        if (stepResult !== 'docUpload' && !ssoInstantSuccess && !ssoAlreadySuccess) {
+        if (stepResult !== 'docUpload' && !ssoForceUpload) {
             console.log(`[${sessionId}] ❌ [${countryConfig.flag}] Cannot proceed - step: ${stepResult}`);
             deleteManager.markStudentFailed(student.studentId);
             collegeMatcher.addFailure();
             statsTracker.recordCollegeAttempt(college.id, college.name, false);
             return null;
         }
-        
+
         // STEP 5: Find all student files
         const files = findStudentFiles(student.studentId);
         if (files.length === 0) {
-            console.log(`[${sessionId}] ⚠️ [${countryConfig.flag}] No files found for ${ssoInstantSuccess || ssoAlreadySuccess ? 'forced ' : ''}upload`);
+            console.log(`[${sessionId}] ⚠️ [${countryConfig.flag}] No files found for ${ssoForceUpload ? 'forced ' : ''}upload`);
 
             // ✅ Force policy: even with SSO success we require an upload
-            if (ssoInstantSuccess || ssoAlreadySuccess) {
+            if (ssoForceUpload) {
                 console.log(`[${sessionId}] ❌ [${countryConfig.flag}] SSO success without files cannot be accepted — force upload required`);
             }
 
@@ -1437,14 +1456,14 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
             return null;
         }
         
-        console.log(`[${sessionId}] 📁 [${countryConfig.flag}] Found ${files.length} file(s) for ${ssoInstantSuccess || ssoAlreadySuccess ? 'FORCE' : ''} upload`);
+        console.log(`[${sessionId}] 📁 [${countryConfig.flag}] Found ${files.length} file(s) for ${ssoForceUpload ? 'FORCE' : ''} upload`);
         
         // STEP 6: Try uploading ALL files until legitimate verification success
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             const attemptNumber = i + 1;
             
-            console.log(`[${sessionId}] 📤 [${countryConfig.flag}] ${ssoInstantSuccess || ssoAlreadySuccess ? 'FORCE ' : ''}Upload attempt ${attemptNumber}/${files.length}: ${file.name}`);
+            console.log(`[${sessionId}] 📤 [${countryConfig.flag}] ${ssoForceUpload ? 'FORCE ' : ''}Upload attempt ${attemptNumber}/${files.length}: ${file.name}`);
             
             const uploadResult = await session.uploadDocument(file.path, attemptNumber);
             
@@ -1461,16 +1480,16 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
                     const spotifyUrl = await session.getSpotifyUrl();
                     
                     if (spotifyUrl) {
-                        const successType = ssoInstantSuccess || ssoAlreadySuccess ? 'sso_force_upload' : 'upload_exact';
-                        const result = { 
-                            student, 
-                            url: spotifyUrl, 
-                            type: successType, 
+                        const successType = ssoForceUpload ? 'sso_force_upload' : 'upload_exact';
+                        const result = {
+                            student,
+                            url: spotifyUrl,
+                            type: successType,
                             college: college.name,
                             fileUsed: file.name,
                             uploadAttempt: attemptNumber,
                             waitTime: statusResult.waitTime,
-                            ssoForced: ssoInstantSuccess || ssoAlreadySuccess
+                            ssoForced: ssoForceUpload
                         };
                         
                         // ✅ SAVE ONLY LEGITIMATE VERIFIED LINKS - NO FAKE LINKS
