@@ -255,6 +255,16 @@ function chunkCustomButtons(buttons = []) {
     return buttons.map(btn => [{ text: btn.label, url: btn.url }]);
 }
 
+function buildCustomButtonsManager(content = {}) {
+    const rows = (content.buttons || []).map(btn => ([
+        { text: `❌ ${btn.label}`, callback_data: `remove_custom_button:${btn.id}` }
+    ]));
+
+    rows.push([{ text: '🔙 Back', callback_data: 'admin_custom_content' }]);
+
+    return { inline_keyboard: rows };
+}
+
 function getOrders() {
     return loadJSON(ORDERS_FILE, []);
 }
@@ -1705,6 +1715,7 @@ bot.onText(/\/start/, (msg) => {
                         { text: '🎁 Create Gift', callback_data: 'admin_create_gift' },
                         { text: '📋 View Gifts', callback_data: 'admin_view_gifts' }
                     ],
+                    [{ text: '🛍️ Custom Buttons', callback_data: 'admin_custom_content' }],
                     [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }],
                     [
                         { text: '📢 Broadcast', callback_data: 'admin_broadcast' }
@@ -1753,6 +1764,7 @@ bot.onText(/\/start/, (msg) => {
                 [{ text: '🎵 Order Spotify', callback_data: 'order' }],
                 [{ text: '🔑 Buy Account (Rp 650)', callback_data: 'buy_account' }],
                 [{ text: `🤖 Buy GPT Basics (Rp ${formatIDR(GPT_BASICS_PRICE_IDR)})`, callback_data: 'buy_gpt_basics' }],
+                [{ text: '🛍️ Products & Buttons', callback_data: 'custom_products' }],
                 [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
                 [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                 [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
@@ -3540,6 +3552,64 @@ else if (data.startsWith('claim_gift_')) {
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
+
+        else if (data === 'custom_products') {
+            const content = getCustomContent();
+            const products = Array.isArray(content.products) ? content.products : [];
+            const customButtons = Array.isArray(content.buttons) ? content.buttons : [];
+            const hasProducts = products.length > 0;
+            const hasButtons = customButtons.length > 0;
+
+            if (!hasProducts && !hasButtons) {
+                bot.editMessageText(
+                    `🛍️ *PRODUCTS & LINKS*\n\n` +
+                    `No custom products or buttons added by admin yet.`,
+                    {
+                        chat_id: chatId,
+                        message_id: messageId,
+                        parse_mode: 'Markdown',
+                        reply_markup: { inline_keyboard: [[{ text: '🔙 Back', callback_data: 'back_to_main' }]] }
+                    }
+                ).catch(() => {});
+                return;
+            }
+
+            let text = '🛍️ *PRODUCTS & SPECIAL LINKS*\n\n';
+
+            if (hasProducts) {
+                text += products.map((product, index) => {
+                    const titleLine = `*${index + 1}. ${escapeMarkdown(product.title || 'Untitled Product')}*`;
+                    const priceLine = product.price ? `\n💰 Rp ${formatIDR(product.price)}` : '';
+                    const descLine = product.description ? `\n📝 ${escapeMarkdown(product.description)}` : '';
+                    return `${titleLine}${priceLine}${descLine}`;
+                }).join('\n\n');
+            } else {
+                text += 'No custom products added yet.\n\n';
+            }
+
+            if (hasButtons) {
+                const buttonList = customButtons.map(btn => `• ${escapeMarkdown(btn.label)}`).join('\n');
+                text += `${hasProducts ? '\n\n' : ''}🔗 *Extra Buttons:*\n${buttonList}`;
+            }
+
+            const inlineButtons = [];
+
+            products.forEach(product => {
+                if (product.button_label && product.button_url) {
+                    inlineButtons.push([{ text: product.button_label, url: product.button_url }]);
+                }
+            });
+
+            inlineButtons.push(...chunkCustomButtons(customButtons));
+            inlineButtons.push([{ text: '🔙 Back', callback_data: 'back_to_main' }]);
+
+            bot.editMessageText(text, {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: inlineButtons }
+            }).catch(() => {});
+        }
         
         // ===== USER MAIN MENU BUTTONS =====
         else if (data === 'buy_account') {
@@ -4049,6 +4119,8 @@ else if (data.startsWith('claim_gift_')) {
                 inline_keyboard: [
                     [{ text: '🎵 Order Spotify', callback_data: 'order' }],
                     [{ text: '🔑 Buy Account (Rp 650)', callback_data: 'buy_account' }],
+                    [{ text: `🤖 Buy GPT Basics (Rp ${formatIDR(GPT_BASICS_PRICE_IDR)})`, callback_data: 'buy_gpt_basics' }],
+                    [{ text: '🛍️ Products & Buttons', callback_data: 'custom_products' }],
                     [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
                     [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
                     [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
@@ -4086,6 +4158,7 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '🎁 Bonuses', callback_data: 'admin_bonuses' }],
                     [{ text: '📱 GoPay', callback_data: 'admin_qris' }, { text: '🛒 Custom Order', callback_data: 'admin_custom_order' }],
                     [{ text: '📋 Pending Top-ups', callback_data: 'admin_pending_topups' }, { text: '💰 Add Balance', callback_data: 'admin_add_balance' }],
+                    [{ text: '🛍️ Custom Buttons', callback_data: 'admin_custom_content' }],
                     [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }],
                     [{ text: '📢 Broadcast', callback_data: 'admin_broadcast' }]
                 ]
