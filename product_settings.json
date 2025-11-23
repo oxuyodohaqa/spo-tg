@@ -1,0 +1,7 @@
+{
+  "account": { "price": 650, "label": "Spotify Verified Accounts" },
+  "gpt_basic": { "price": 50, "label": "GPT Basics Accounts" },
+  "gpt_invite": { "price": 650, "label": "GPT via Invite Accounts" },
+  "alight_motion": { "price": 650, "label": "Alight Motion Accounts" },
+  "perplexity": { "price": 650, "bulk_price": 500, "bulk_threshold": 5, "label": "Perplexity AI Links" }
+}
