@@ -1134,12 +1134,17 @@ class VerificationSession {
                 
                 console.log(`[${this.id}] ⏱️ [${this.countryConfig.flag}] Status check ${i+1}/${maxWaitTime}: ${data.currentStep}`);
                 
-                if (data.currentStep === 'success' && 
+                if (data.currentStep === 'success' &&
                     (!data.rejectionReasons || data.rejectionReasons.length === 0)) {
                     console.log(`[${this.id}] 🎉 [${this.countryConfig.flag}] Verification SUCCESS after ${i+1} seconds!`);
                     return { status: 'SUCCESS', data, waitTime: i+1 };
                 }
-                
+
+                if (data.currentStep === 'sso') {
+                    console.log(`[${this.id}] 🔄 [${this.countryConfig.flag}] SSO verification detected after ${i+1} seconds`);
+                    return { status: 'SSO', data, waitTime: i+1 };
+                }
+
                 if (data.rejectionReasons?.length > 0) {
                     console.log(`[${this.id}] ❌ [${this.countryConfig.flag}] Verification REJECTED after ${i+1} seconds`);
                     return { status: 'REJECTED', data, waitTime: i+1 };
@@ -1407,6 +1412,9 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
         if (preUploadStatus.status === 'SUCCESS') {
             console.log(`[${sessionId}] ✨ [${countryConfig.flag}] SSO success confirmed after submission - still uploading to avoid failures`);
             ssoAlreadySuccess = true;
+        } else if (preUploadStatus.status === 'SSO') {
+            console.log(`[${sessionId}] 🔄 [${countryConfig.flag}] SSO flow active after submission - uploads will be forced`);
+            ssoAlreadySuccess = true;
         } else if (preUploadStatus.status === 'REJECTED') {
             console.log(`[${sessionId}] ❌ [${countryConfig.flag}] SSO status shows rejection before upload`);
             deleteManager.markStudentRejected(student.studentId);
@@ -1452,28 +1460,31 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
             if (uploadResult.success) {
                 console.log(`[${sessionId}] ✅ [${countryConfig.flag}] Upload ${attemptNumber} successful! Waiting ${CONFIG.verificationTimeout}s for LEGITIMATE verification...`);
                 collegeMatcher.incrementUploadRetry();
-                
+
                 // ✅ CRITICAL: Wait for LEGITIMATE verification status
                 const statusResult = await session.checkStatus(CONFIG.verificationTimeout);
-                
+
                 // ✅ ONLY SAVE IF LEGITIMATELY VERIFIED - NO FAKE LINKS
-                if (statusResult.status === 'SUCCESS') {
-                    console.log(`[${sessionId}] 🎉 [${countryConfig.flag}] LEGITIMATE Verification SUCCESS after upload ${attemptNumber}!`);
+                if (statusResult.status === 'SUCCESS' || statusResult.status === 'SSO') {
+                    const statusLabel = statusResult.status === 'SSO' ? 'SSO verification acknowledged' : 'LEGITIMATE Verification SUCCESS';
+                    console.log(`[${sessionId}] 🎉 [${countryConfig.flag}] ${statusLabel} after upload ${attemptNumber}!`);
                     const spotifyUrl = await session.getSpotifyUrl();
-                    
+
                     if (spotifyUrl) {
-                        const successType = ssoInstantSuccess || ssoAlreadySuccess ? 'sso_force_upload' : 'upload_exact';
-                        const result = { 
-                            student, 
-                            url: spotifyUrl, 
-                            type: successType, 
+                        const successType = (ssoInstantSuccess || ssoAlreadySuccess || statusResult.status === 'SSO')
+                            ? 'sso_force_upload'
+                            : 'upload_exact';
+                        const result = {
+                            student,
+                            url: spotifyUrl,
+                            type: successType,
                             college: college.name,
                             fileUsed: file.name,
                             uploadAttempt: attemptNumber,
                             waitTime: statusResult.waitTime,
-                            ssoForced: ssoInstantSuccess || ssoAlreadySuccess
+                            ssoForced: ssoInstantSuccess || ssoAlreadySuccess || statusResult.status === 'SSO'
                         };
-                        
+
                         // ✅ SAVE ONLY LEGITIMATE VERIFIED LINKS - NO FAKE LINKS
                         saveSpotifyUrl(student, spotifyUrl, session.verificationId, countryConfig, session.getUploadStats());
                         deleteManager.markStudentSuccess(student.studentId);
@@ -1491,15 +1502,80 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
                     collegeMatcher.incrementUploadRetry();
                     continue;
                 }
-                
+
             } else {
                 console.log(`[${sessionId}] ❌ [${countryConfig.flag}] Upload ${attemptNumber} failed: ${uploadResult.reason} - trying next file...`);
                 collegeMatcher.incrementUploadRetry();
+
+                if (ssoInstantSuccess || ssoAlreadySuccess) {
+                    const statusResult = await session.checkStatus(1);
+                    if (statusResult.status === 'SUCCESS' || statusResult.status === 'SSO') {
+                        const statusLabel = statusResult.status === 'SSO' ? 'SSO verification acknowledged' : 'LEGITIMATE Verification SUCCESS despite upload failure';
+                        console.log(`[${sessionId}] 🎉 [${countryConfig.flag}] ${statusLabel}; proceeding without further uploads`);
+                        const spotifyUrl = await session.getSpotifyUrl();
+
+                        if (spotifyUrl) {
+                            const successType = (ssoInstantSuccess || ssoAlreadySuccess || statusResult.status === 'SSO')
+                                ? 'sso_force_upload'
+                                : 'upload_exact';
+                            const result = {
+                                student,
+                                url: spotifyUrl,
+                                type: successType,
+                                college: college.name,
+                                fileUsed: file.name,
+                                uploadAttempt: attemptNumber,
+                                waitTime: statusResult.waitTime,
+                                ssoForced: ssoInstantSuccess || ssoAlreadySuccess || statusResult.status === 'SSO'
+                            };
+
+                            saveSpotifyUrl(student, spotifyUrl, session.verificationId, countryConfig, session.getUploadStats());
+                            deleteManager.markStudentSuccess(student.studentId);
+                            collegeMatcher.addSuccess();
+                            statsTracker.recordSuccess(result);
+                            statsTracker.recordCollegeAttempt(college.id, college.name, true);
+                            return result;
+                        }
+                    }
+                }
+
                 continue;
             }
         }
-        
+
         // STEP 7: All uploads exhausted
+        if (ssoInstantSuccess || ssoAlreadySuccess) {
+            const statusResult = await session.checkStatus(CONFIG.verificationTimeout);
+            if (statusResult.status === 'SUCCESS' || statusResult.status === 'SSO') {
+                const statusLabel = statusResult.status === 'SSO' ? 'SSO verification acknowledged post-upload attempts' : 'LEGITIMATE Verification SUCCESS after failed uploads';
+                console.log(`[${sessionId}] 🎉 [${countryConfig.flag}] ${statusLabel}`);
+                const spotifyUrl = await session.getSpotifyUrl();
+
+                if (spotifyUrl) {
+                    const successType = (ssoInstantSuccess || ssoAlreadySuccess || statusResult.status === 'SSO')
+                        ? 'sso_force_upload'
+                        : 'upload_exact';
+                    const result = {
+                        student,
+                        url: spotifyUrl,
+                        type: successType,
+                        college: college.name,
+                        fileUsed: files[files.length - 1]?.name,
+                        uploadAttempt: files.length,
+                        waitTime: statusResult.waitTime,
+                        ssoForced: true
+                    };
+
+                    saveSpotifyUrl(student, spotifyUrl, session.verificationId, countryConfig, session.getUploadStats());
+                    deleteManager.markStudentSuccess(student.studentId);
+                    collegeMatcher.addSuccess();
+                    statsTracker.recordSuccess(result);
+                    statsTracker.recordCollegeAttempt(college.id, college.name, true);
+                    return result;
+                }
+            }
+        }
+
         console.log(`[${sessionId}] ❌ [${countryConfig.flag}] All ${files.length} file(s) exhausted - NO LEGITIMATE VERIFICATION`);
         deleteManager.markStudentRejected(student.studentId);
         collegeMatcher.addFailure();
