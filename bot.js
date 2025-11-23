@@ -33,7 +33,7 @@ const ALIGHT_MOTION_PRICE_IDR = 4000;
 const ALIGHT_MOTION_PACK5_PRICE_IDR = 15000;
 const ALIGHT_MOTION_PACK50_PRICE_IDR = 50000;
 const PERPLEXITY_PRICE_IDR = 2500;
-const PERPLEXITY_BULK_PRICE_IDR = 2500;
+const PERPLEXITY_BULK_PRICE_IDR = 2000;
 const PERPLEXITY_BULK_THRESHOLD = 5;
 const AUTO_BROADCAST_MIN_STOCK = 1;
 
@@ -251,8 +251,8 @@ function getPerplexityUnitPrice(quantity = 1) {
 
 function formatPerplexityPriceSummary() {
     const perplexity = getPerplexityConfig();
-    const base = `Rp ${formatIDR(perplexity.base)}`;
-    const bulk = `${perplexity.threshold}+ Rp ${formatIDR(perplexity.bulk)}`;
+    const base = `1x Rp ${formatIDR(perplexity.base)}`;
+    const bulk = `${perplexity.threshold}+ Rp ${formatIDR(perplexity.bulk)} each`;
     return `${base} | ${bulk}`;
 }
 
@@ -5696,15 +5696,15 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'menu_spotify') {
             const keyboard = {
                 inline_keyboard: [
-                    [{ text: '🎵 Order Spotify', callback_data: 'order' }],
-                    [{ text: `🔑 ${getProductLabel('account', 'Buy Account')} (Rp ${formatIDR(getAccountPrice())})`, callback_data: 'buy_account' }],
+                    [{ text: '🎵 Spotify Links', callback_data: 'order' }],
+                    [{ text: `✅ ${getProductLabel('account', 'Spotify Verified Accounts')} (Rp ${formatIDR(getAccountPrice())})`, callback_data: 'buy_account' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
 
             bot.editMessageText(
                 `🎵 *SPOTIFY OPTIONS*\n\n` +
-                `Choose between ordering links or buying verified accounts.`,
+                `Pick Spotify Links or Spotify Verified Accounts using the buttons below.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -6571,15 +6571,15 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'menu_spotify') {
             const keyboard = {
                 inline_keyboard: [
-                    [{ text: '🎵 Order Spotify', callback_data: 'order' }],
-                    [{ text: `🔑 ${getProductLabel('account', 'Buy Account')} (Rp ${formatIDR(getAccountPrice())})`, callback_data: 'buy_account' }],
+                    [{ text: '🎵 Spotify Links', callback_data: 'order' }],
+                    [{ text: `✅ ${getProductLabel('account', 'Spotify Verified Accounts')} (Rp ${formatIDR(getAccountPrice())})`, callback_data: 'buy_account' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
 
             bot.editMessageText(
                 `🎵 *SPOTIFY OPTIONS*\n\n` +
-                `Choose between ordering links or buying verified accounts.`,
+                `Pick Spotify Links or Spotify Verified Accounts using the buttons below.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -6784,15 +6784,15 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'menu_spotify') {
             const keyboard = {
                 inline_keyboard: [
-                    [{ text: '🎵 Order Spotify', callback_data: 'order' }],
-                    [{ text: `🔑 ${getProductLabel('account', 'Buy Account')} (Rp ${formatIDR(getAccountPrice())})`, callback_data: 'buy_account' }],
+                    [{ text: '🎵 Spotify Links', callback_data: 'order' }],
+                    [{ text: `✅ ${getProductLabel('account', 'Spotify Verified Accounts')} (Rp ${formatIDR(getAccountPrice())})`, callback_data: 'buy_account' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
 
             bot.editMessageText(
                 `🎵 *SPOTIFY OPTIONS*\n\n` +
-                `Choose between ordering links or buying verified accounts.`,
+                `Pick Spotify Links or Spotify Verified Accounts using the buttons below.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
