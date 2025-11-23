@@ -279,6 +279,16 @@ function buildCustomButtonsManager(content = {}) {
     return { inline_keyboard: rows };
 }
 
+function buildCustomButtonsManager(content = {}) {
+    const rows = (content.buttons || []).map(btn => ([
+        { text: `❌ ${btn.label}`, callback_data: `remove_custom_button:${btn.id}` }
+    ]));
+
+    rows.push([{ text: '🔙 Back', callback_data: 'admin_custom_content' }]);
+
+    return { inline_keyboard: rows };
+}
+
 function getOrders() {
     return loadJSON(ORDERS_FILE, []);
 }
