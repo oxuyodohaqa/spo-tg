@@ -1219,7 +1219,7 @@ async function deliverAccount(userId, orderId = 'N/A') {
         const nextAccount = accountStock.accounts.shift();
         updateAccountStock(accountStock.accounts);
 
-        const safeAccount = escapeMarkdown(nextAccount);
+        const safeAccount = escapeInlineCode(nextAccount);
 
         const message =
             `✅ *ACCOUNT DELIVERED!*\n\n` +
@@ -1250,7 +1250,7 @@ async function deliverAccounts(userId, orderId, quantity, pricePerAccount = getA
         updateAccountStock(accountStock.accounts);
 
         const credentials = delivered
-            .map(acc => `• \`${escapeMarkdown(acc)}\``)
+            .map(acc => `• \`${escapeInlineCode(acc)}\``)
             .join('\n');
 
         const totalPrice = quantity * pricePerAccount;
@@ -1285,7 +1285,7 @@ async function deliverGptBasics(userId, orderId, quantity, pricePerAccount = get
         updateGptBasicsStock(stock.accounts);
 
         const credentials = delivered
-            .map(acc => `• \`${escapeMarkdown(acc)}\``)
+            .map(acc => `• \`${escapeInlineCode(acc)}\``)
             .join('\n');
 
         const totalPrice = quantity * pricePerAccount;
@@ -1320,7 +1320,7 @@ async function deliverGptInvite(userId, orderId, quantity, pricePerAccount = get
         updateGptInviteStock(stock.accounts);
 
         const credentials = delivered
-            .map(acc => `• \`${escapeMarkdown(acc)}\``)
+            .map(acc => `• \`${escapeInlineCode(acc)}\``)
             .join('\n');
 
         const totalPrice = quantity * pricePerAccount;
