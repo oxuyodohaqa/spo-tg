@@ -4537,7 +4537,7 @@ else if (data.startsWith('claim_gift_')) {
                 `${statusLine}\n\n` +
                 `🔗 Access via https://perplexity.ai\n` +
                 `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} link(s) depending on stock.\n` +
-                `📱 For QRIS please DM ${ADMIN_USERNAME} to get the code.`,
+                `📱 Choose QRIS to receive the GoPay QR automatically, then send payment proof.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -5081,13 +5081,30 @@ else if (data.startsWith('claim_gift_')) {
                 `📱 Status: Awaiting Payment\n` +
                 `⏰ Expires in: ${ORDER_EXPIRY_MINUTES} minutes\n\n`;
 
-            bot.sendMessage(chatId,
-                `📱 *PAYMENT INSTRUCTIONS*\n\n` +
-                `${orderMessage}` +
-                `📸 Please DM ${ADMIN_USERNAME} with your payment proof to confirm.\n` +
-                `⚡ We will deliver after payment is verified.`,
-                { parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
+            const gopay = getQRIS();
+            const paymentCaption =
+                `📱 *PAY WITH QRIS*\n\n` +
+                `📋 Order ID: #${orderId}\n` +
+                `Product: Alight Motion account\n` +
+                `Quantity: ${quantity}\n` +
+                `Total: Rp ${formatIDR(totalPrice)}\n\n` +
+                `📸 Scan the GoPay QR then send screenshot with caption: #${orderId}\n` +
+                `Or DM admin: ${ADMIN_USERNAME}`;
+
+            if (gopay.file_id) {
+                bot.sendPhoto(chatId, gopay.file_id, {
+                    caption: paymentCaption,
+                    parse_mode: 'Markdown',
+                    reply_markup: keyboard
+                }).catch(() => {});
+            } else {
+                bot.sendMessage(chatId, paymentCaption, { parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
+            }
+
+            orderMessage += `📸 Send payment proof photo with caption: #${orderId}\n` +
+                `⚡ We will deliver after payment is verified.`;
+
+            bot.sendMessage(chatId, orderMessage, { parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
 
             const pendingPayment = {
                 order_id: orderId,
@@ -7934,22 +7951,28 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                     `📱 Status: Awaiting Payment\n` +
                     `⏰ Expires in: ${ORDER_EXPIRY_MINUTES} minutes\n\n`;
 
-                bot.sendMessage(chatId,
-                    `📱 *PAYMENT INSTRUCTIONS*\n\n` +
-                    `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
-                    `For QRIS, DM the admin directly to get the code and confirm.`,
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: `📱 DM Admin ${ADMIN_USERNAME}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }]
-                            ]
-                        }
-                    }
-                ).catch(() => {});
+                const gopay = getQRIS();
+                const paymentCaption =
+                    `📱 *PAY WITH QRIS*\n\n` +
+                    `📋 Order ID: #${orderId}\n` +
+                    `Product: Perplexity AI link\n` +
+                    `Quantity: ${quantity}\n` +
+                    `Total: Rp ${formatIDR(totalPrice)}\n\n` +
+                    `📸 Scan the GoPay QR then send screenshot with caption: #${orderId}\n` +
+                    `Or DM admin: ${ADMIN_USERNAME}`;
 
-                orderMessage += `💡 Send payment proof photo with caption: #${orderId}\n` +
-                    `Or contact ${ADMIN_USERNAME} for payment details/QRIS`;
+                if (gopay.file_id) {
+                    bot.sendPhoto(chatId, gopay.file_id, {
+                        caption: paymentCaption,
+                        parse_mode: 'Markdown',
+                        reply_markup: keyboard
+                    }).catch(() => {});
+                } else {
+                    bot.sendMessage(chatId, paymentCaption, { parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
+                }
+
+                orderMessage += `📸 Send payment proof photo with caption: #${orderId}\n` +
+                    `⚡ We will deliver after payment is verified.`;
 
                 bot.sendMessage(chatId, orderMessage, {
                     parse_mode: 'Markdown',
