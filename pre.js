@@ -1368,41 +1368,23 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
         const dob = generateDOB();
         const step = await session.submitPersonalInfo(student, dob, college);
         
-        // ✅ Handle SSO instant success by waiting for status before deciding on uploads
+        // ✅ Handle SSO instant success by flagging but still forcing upload (previous behavior)
         let ssoInstantSuccess = false;
         if (step === 'success') {
-            console.log(`[${sessionId}] ⚡ [${countryConfig.flag}] SSO instant success detected - waiting for verification before upload`);
+            console.log(`[${sessionId}] ⚡ [${countryConfig.flag}] SSO instant success detected - forcing upload anyway`);
             ssoInstantSuccess = true;
 
             const ssoStatus = await session.checkStatus(CONFIG.verificationTimeout);
-            if (ssoStatus.status === 'SUCCESS') {
-                const spotifyUrl = await session.getSpotifyUrl();
-
-                if (spotifyUrl) {
-                    const result = {
-                        student,
-                        url: spotifyUrl,
-                        type: 'instant_exact',
-                        college: college.name,
-                        fileUsed: null,
-                        uploadAttempt: 0,
-                        waitTime: ssoStatus.waitTime,
-                        ssoForced: false
-                    };
-
-                    saveSpotifyUrl(student, spotifyUrl, session.verificationId, countryConfig, session.getUploadStats());
-                    deleteManager.markStudentSuccess(student.studentId);
-                    collegeMatcher.addSuccess();
-                    statsTracker.recordSuccess(result);
-                    statsTracker.recordCollegeAttempt(college.id, college.name, true);
-                    return result;
-                }
-            } else if (ssoStatus.status === 'REJECTED') {
+            if (ssoStatus.status === 'REJECTED') {
                 console.log(`[${sessionId}] ❌ [${countryConfig.flag}] SSO rejected before upload`);
                 deleteManager.markStudentRejected(student.studentId);
                 collegeMatcher.addFailure();
                 statsTracker.recordCollegeAttempt(college.id, college.name, false);
                 return null;
+            }
+
+            if (ssoStatus.status === 'SUCCESS') {
+                console.log(`[${sessionId}] ✨ [${countryConfig.flag}] SSO shows success but will still upload for verification`);
             } else {
                 console.log(`[${sessionId}] ⏳ [${countryConfig.flag}] SSO verification pending — will proceed with upload for safety`);
             }
@@ -1423,29 +1405,8 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
 
         const preUploadStatus = await session.checkStatus(1);
         if (preUploadStatus.status === 'SUCCESS') {
-            console.log(`[${sessionId}] ✨ [${countryConfig.flag}] SSO success confirmed after submission - no upload needed`);
+            console.log(`[${sessionId}] ✨ [${countryConfig.flag}] SSO success confirmed after submission - forcing upload to validate`);
             ssoAlreadySuccess = true;
-
-            const spotifyUrl = await session.getSpotifyUrl();
-            if (spotifyUrl) {
-                const result = {
-                    student,
-                    url: spotifyUrl,
-                    type: 'already_success_exact',
-                    college: college.name,
-                    fileUsed: null,
-                    uploadAttempt: 0,
-                    waitTime: preUploadStatus.waitTime,
-                    ssoForced: false
-                };
-
-                saveSpotifyUrl(student, spotifyUrl, session.verificationId, countryConfig, session.getUploadStats());
-                deleteManager.markStudentSuccess(student.studentId);
-                collegeMatcher.addSuccess();
-                statsTracker.recordSuccess(result);
-                statsTracker.recordCollegeAttempt(college.id, college.name, true);
-                return result;
-            }
         } else if (preUploadStatus.status === 'REJECTED') {
             console.log(`[${sessionId}] ❌ [${countryConfig.flag}] SSO status shows rejection before upload`);
             deleteManager.markStudentRejected(student.studentId);
