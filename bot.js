@@ -28,8 +28,9 @@ const MIN_TOPUP_AMOUNT = 0;
 const MAX_TOPUP_AMOUNT = 100000;
 const ACCOUNT_PRICE_IDR = 650;
 const GPT_BASICS_PRICE_IDR = 50;
-const GPT_INVITE_FW_PRICE_IDR = 15000;
-const GPT_INVITE_NW_PRICE_IDR = 6000;
+// GPT via Invite pricing (IDR)
+const GPT_INVITE_FW_PRICE_IDR = 15_000; // Full Warranty
+const GPT_INVITE_NW_PRICE_IDR = 6_000;  // No Warranty
 const ALIGHT_MOTION_PRICE_IDR = 4000;
 const ALIGHT_MOTION_PACK5_PRICE_IDR = 15000;
 const ALIGHT_MOTION_PACK50_PRICE_IDR = 50000;
@@ -5820,13 +5821,13 @@ else if (data.startsWith('claim_gift_')) {
                 `🎵 Spotify Links: ${stock.links?.length || 0}\n` +
                 `🔑 ${escapeMarkdown(getProductLabel('account', 'Spotify Verified Accounts'))}: ${accountAvailable} (Rp ${formatIDR(getAccountPrice())})\n` +
                 `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics Accounts'))}: ${gptAvailable} (Rp ${formatIDR(getGptBasicsPrice())})\n` +
-                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite Accounts'))}: ${gptInviteAvailable} (Rp ${formatIDR(getGptInvitePrice())})\n` +
+                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite Accounts'))}: ${gptInviteAvailable} (${formatGptInvitePriceSummary()})\n` +
                 `🧠 Perplexity Links: ${perplexityAvailable} (${formatPerplexityPriceSummary()})\n` +
                 `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Accounts'))}: ${alightAvailable} (${formatAlightPriceSummary()})\n\n` +
                 `💰 Spotify Link Pricing:\n` +
                 `${pricingText}\n` +
                 `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics'))} fixed: Rp ${formatIDR(getGptBasicsPrice())}\n` +
-                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))} fixed: Rp ${formatIDR(getGptInvitePrice())}\n` +
+                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))} fixed: ${formatGptInvitePriceSummary()}\n` +
                 `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion'))} packages: ${formatAlightPriceSummary()}\n` +
                 `🧠 Perplexity: ${formatPerplexityPriceSummary()}\n\n` +
                 `🎟️ Use coupon codes for extra discounts!`,
@@ -6597,7 +6598,7 @@ else if (data.startsWith('claim_gift_')) {
             const keyboard = {
                 inline_keyboard: [
                     [{ text: `🤖 ${getProductLabel('gpt_basic', 'GPT Basics Accounts')} (Rp ${formatIDR(getGptBasicsPrice())})`, callback_data: 'buy_gpt_basics' }],
-                    [{ text: `📩 ${getProductLabel('gpt_invite', 'GPT via Invite')} (Rp ${formatIDR(getGptInvitePrice())})`, callback_data: 'buy_gpt_invite' }],
+                    [{ text: `📩 ${getProductLabel('gpt_invite', 'GPT via Invite')} (${formatGptInvitePriceSummary()})`, callback_data: 'buy_gpt_invite' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
@@ -6686,13 +6687,13 @@ else if (data.startsWith('claim_gift_')) {
                 `🎵 Spotify Links: ${stock.links?.length || 0}\n` +
                 `🔑 ${escapeMarkdown(getProductLabel('account', 'Spotify Verified Accounts'))}: ${accountAvailable} (Rp ${formatIDR(getAccountPrice())})\n` +
                 `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics Accounts'))}: ${gptAvailable} (Rp ${formatIDR(getGptBasicsPrice())})\n` +
-                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite Accounts'))}: ${gptInviteAvailable} (Rp ${formatIDR(getGptInvitePrice())})\n` +
+                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite Accounts'))}: ${gptInviteAvailable} (${formatGptInvitePriceSummary()})\n` +
                 `🧠 Perplexity Links: ${perplexityAvailable} (${formatPerplexityPriceSummary()})\n` +
                 `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Accounts'))}: ${alightAvailable} (${formatAlightPriceSummary()})\n\n` +
                 `💰 Spotify Link Pricing:\n` +
                 `${pricingText}\n` +
                 `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics'))} fixed: Rp ${formatIDR(getGptBasicsPrice())}\n` +
-                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))} fixed: Rp ${formatIDR(getGptInvitePrice())}\n` +
+                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))} fixed: ${formatGptInvitePriceSummary()}\n` +
                 `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion'))} packages: ${formatAlightPriceSummary()}\n` +
                 `🧠 Perplexity: ${formatPerplexityPriceSummary()}\n\n` +
                 `🎟️ Use coupon codes for extra discounts!`,
@@ -6809,7 +6810,7 @@ else if (data.startsWith('claim_gift_')) {
             const keyboard = {
                 inline_keyboard: [
                     [{ text: `🤖 ${getProductLabel('gpt_basic', 'GPT Basics Accounts')} (Rp ${formatIDR(getGptBasicsPrice())})`, callback_data: 'buy_gpt_basics' }],
-                    [{ text: `📩 ${getProductLabel('gpt_invite', 'GPT via Invite')} (Rp ${formatIDR(getGptInvitePrice())})`, callback_data: 'buy_gpt_invite' }],
+                    [{ text: `📩 ${getProductLabel('gpt_invite', 'GPT via Invite')} (${formatGptInvitePriceSummary()})`, callback_data: 'buy_gpt_invite' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
@@ -6890,13 +6891,13 @@ else if (data.startsWith('claim_gift_')) {
                 `🎵 Spotify Links: ${stock.links?.length || 0}\n` +
                 `🔑 ${escapeMarkdown(getProductLabel('account', 'Spotify Verified Accounts'))}: ${accountAvailable} (Rp ${formatIDR(getAccountPrice())})\n` +
                 `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics Accounts'))}: ${gptAvailable} (Rp ${formatIDR(getGptBasicsPrice())})\n` +
-                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite Accounts'))}: ${gptInviteAvailable} (Rp ${formatIDR(getGptInvitePrice())})\n` +
+                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite Accounts'))}: ${gptInviteAvailable} (${formatGptInvitePriceSummary()})\n` +
                 `🧠 Perplexity Links: ${perplexityAvailable} (${formatPerplexityPriceSummary()})\n` +
                 `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Accounts'))}: ${alightAvailable} (Rp ${formatIDR(getAlightMotionPrice())})\n\n` +
                 `💰 Spotify Link Pricing:\n` +
                 `${pricingText}\n` +
                 `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics'))} fixed: Rp ${formatIDR(getGptBasicsPrice())}\n` +
-                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))} fixed: Rp ${formatIDR(getGptInvitePrice())}\n` +
+                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))} fixed: ${formatGptInvitePriceSummary()}\n` +
                 `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion'))} fixed: Rp ${formatIDR(getAlightMotionPrice())}\n` +
                 `🧠 Perplexity: ${formatPerplexityPriceSummary()}\n\n` +
                 `🎟️ Use coupon codes for extra discounts!`,
