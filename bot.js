@@ -3460,6 +3460,74 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        if (data === 'admin_product_settings') {
+            if (!isAdmin(userId)) return;
+
+            const settings = getProductSettings();
+            const summary = [
+                `🔑 ${escapeMarkdown(getProductLabel('account', 'Spotify Accounts'))}: Rp ${formatIDR(getAccountPrice())}`,
+                `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics'))}: Rp ${formatIDR(getGptBasicsPrice())}`,
+                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: Rp ${formatIDR(getGptInvitePrice())}`,
+                `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion'))}: ${formatAlightPriceSummary()}`,
+                `🧠 ${escapeMarkdown(settings.perplexity?.label || 'Perplexity AI')}: ${formatPerplexityPriceSummary()}`
+            ].join('\n');
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '🔑 Edit Spotify Accounts', callback_data: 'edit_product_account' }],
+                    [{ text: '🤖 Edit GPT Basics', callback_data: 'edit_product_gpt_basic' }],
+                    [{ text: '📩 Edit GPT via Invite', callback_data: 'edit_product_gpt_invite' }],
+                    [{ text: '🎬 Edit Alight Motion', callback_data: 'edit_product_alight_motion' }],
+                    [{ text: '🧠 Edit Perplexity AI', callback_data: 'edit_product_perplexity' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🏷️ *PRODUCT LABELS & PRICES*\n\n` +
+                `${summary}\n\n` +
+                `Tap a product to update the price and user-facing button text.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data.startsWith('edit_product_')) {
+            if (!isAdmin(userId)) return;
+
+            const productKey = data.replace('edit_product_', '');
+            userStates[chatId] = { state: 'awaiting_product_setting', productKey };
+
+            if (productKey === 'perplexity') {
+                bot.editMessageText(
+                    `🧠 *EDIT PERPLEXITY PRICING*\n\n` +
+                    `Send Base|Bulk|Threshold|Label\n` +
+                    `Example: 650|500|5|Perplexity AI Links\n\n` +
+                    `Leave label blank to keep current text.`,
+                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+                ).catch(() => {});
+            } else if (productKey === 'alight_motion') {
+                bot.editMessageText(
+                    `🎬 *EDIT ALIGHT MOTION PRICING*\n\n` +
+                    `Send 1x|5pcs|50pcs|Label\n` +
+                    `Example: 4000|15000|50000|Alight Motion Accounts\n\n` +
+                    `Leave label blank to keep current text.`,
+                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+                ).catch(() => {});
+            } else {
+                const label = getProductLabel(productKey, 'this product');
+                bot.editMessageText(
+                    `🏷️ *EDIT ${label.toUpperCase()}*\n\n` +
+                    `Send Price|Label (label optional).\n` +
+                    `Example: 700 | ${label}\n\n` +
+                    `Price updates apply to orders immediately.`,
+                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+                ).catch(() => {});
+            }
+        }
+
+        else if (data === 'edit_pricing') {
+            if (!isAdmin(userId)) return;
+
         else if (data === 'admin_product_settings') {
             if (!isAdmin(userId)) return;
 
@@ -4611,6 +4679,14 @@ else if (data.startsWith('claim_gift_')) {
             const available = accountStock.accounts?.length || 0;
             const maxQuantity = Math.max(1, Math.min(50, available));
 
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No accounts in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
             const keyboard = {
                 inline_keyboard: [
                     [{ text: '💳 Pay with Balance', callback_data: 'pay_gpt_invite_balance' }],
@@ -4653,13 +4729,11 @@ else if (data.startsWith('claim_gift_')) {
             };
 
             bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `💳 Paying with balance\n` +
-                `💵 Price: Rp ${formatIDR(getAccountPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+                `🎬 *BUY ALIGHT MOTION*\n\n` +
+                `💵 Packages: ${formatAlightPriceSummary()}\n` +
+                `📦 Accounts available: ${available}\n\n` +
+                `✅ Pick a package or choose custom quantity.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
 
@@ -4709,6 +4783,74 @@ else if (data.startsWith('claim_gift_')) {
             userStates[chatId] = {
                 state: 'selected_alight_package',
                 selected_quantity: quantity,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🎬 *ALIGHT MOTION PACKAGE*\n\n` +
+                `📦 Quantity: ${quantity}\n` +
+                `💵 Price per account: Rp ${formatIDR(unitPrice)}\n` +
+                `💰 Total: Rp ${formatIDR(totalPrice)}\n` +
+                `📌 Choose payment method.`,
+                {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '💳 Pay with Balance', callback_data: 'pay_alight_balance' }],
+                            [{ text: '📱 Pay via QRIS', callback_data: 'pay_alight_qris' }],
+                            [{ text: '🔙 Back', callback_data: 'buy_alight_motion' }]
+                        ]
+                    }
+                }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_alight_balance_custom') {
+            const alightStock = getAlightMotionStock();
+            const available = alightStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(50, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, { text: '❌ No Alight Motion in stock!', show_alert: true }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_alight_quantity',
+                payment_method: 'balance',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `💳 Paying with balance\n` +
+                `💵 Price: Rp ${formatIDR(getAccountPrice())} per account\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of Alight Motion accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_alight_qris_custom') {
+            const alightStock = getAlightMotionStock();
+            const available = alightStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(50, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, { text: '❌ No Alight Motion in stock!', show_alert: true }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_alight_quantity',
+                payment_method: 'qris',
+                userId: userId,
+                user: query.from,
                 max_quantity: maxQuantity
             };
 
@@ -4780,6 +4922,396 @@ else if (data.startsWith('claim_gift_')) {
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
                 `Send the number of GPT Basics accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_gpt_invite_balance' || data === 'confirm_buy_gpt_invite') {
+            const gptInviteStock = getGptInviteStock();
+            const available = gptInviteStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(50, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No GPT via invite in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_gpt_invite_quantity',
+                payment_method: 'balance',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `💳 Paying with balance\n` +
+                `💵 Price: Rp ${formatIDR(getGptInvitePrice())} per account\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of GPT via invite accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_gpt_invite_qris') {
+            const gptInviteStock = getGptInviteStock();
+            const available = gptInviteStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(50, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No GPT via invite in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_gpt_invite_quantity',
+                payment_method: 'qris',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `📱 Paying via QRIS\n` +
+                `💵 Price: Rp ${formatIDR(getGptInvitePrice())} per account\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of GPT via invite accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_alight_balance' || data === 'confirm_buy_alight') {
+            const alightStock = getAlightMotionStock();
+            const available = alightStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(50, available));
+            const state = userStates[chatId] || {};
+            const presetQuantity = state.selected_quantity;
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Alight Motion in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            if (!presetQuantity) {
+                userStates[chatId] = {
+                    state: 'awaiting_alight_quantity',
+                    payment_method: 'balance',
+                    userId: userId,
+                    user: query.from,
+                    max_quantity: maxQuantity
+                };
+
+                bot.editMessageText(
+                    `🔢 *ENTER QUANTITY*\n\n` +
+                    `💳 Paying with balance\n` +
+                    `💵 Price: ${formatAlightPriceSummary()}\n` +
+                    `📦 Available: ${available}\n` +
+                    `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                    `Send the number of Alight Motion accounts you want to buy.`,
+                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+                ).catch(() => {});
+                return;
+            }
+
+            const quantity = Math.min(presetQuantity, maxQuantity);
+            const alightPrice = getAlightUnitPrice(quantity);
+            const totalPrice = quantity * alightPrice;
+            const users = getUsers();
+            const balance = getBalance(userId);
+
+            if (balance < totalPrice) {
+                const shortfall = totalPrice - balance;
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: '💵 Top Up via QRIS', callback_data: 'topup_balance' }],
+                        [{ text: '🔙 Back', callback_data: 'buy_alight_motion' }]
+                    ]
+                };
+
+                bot.sendMessage(chatId,
+                    `⚠️ Balance not enough.\n\n` +
+                    `Requested: ${quantity} Alight Motion account(s)\n` +
+                    `Total needed: Rp ${formatIDR(totalPrice)}\n` +
+                    `Current balance: Rp ${formatIDR(balance)}\n` +
+                    `Shortfall: Rp ${formatIDR(shortfall)}\n\n` +
+                    `Top up with QRIS then try again.`,
+                    { parse_mode: 'Markdown', reply_markup: keyboard }
+                ).catch(() => {});
+                return;
+            }
+
+            updateBalance(userId, -totalPrice);
+
+            const orderId = getNextOrderId();
+            const order = {
+                order_id: orderId,
+                user_id: userId,
+                username: users[userId]?.username || query.from.username || 'unknown',
+                quantity: quantity,
+                total_quantity: quantity,
+                original_price: alightPrice,
+                total_price: totalPrice,
+                status: 'completed',
+                payment_method: 'balance',
+                date: new Date().toISOString(),
+                completed_at: new Date().toISOString(),
+                product: 'alight_motion'
+            };
+
+            addOrder(order);
+
+            if (!users[userId]) {
+                addUser(userId, query.from);
+            }
+
+            const updatedUsers = getUsers();
+            updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+            updatedUsers[userId].completed_orders = (updatedUsers[userId].completed_orders || 0) + 1;
+            saveJSON(USERS_FILE, updatedUsers);
+
+            const delivery = await deliverAlightMotion(userId, orderId, quantity, alightPrice);
+            const newBalance = getBalance(userId);
+
+            if (delivery.success) {
+                bot.sendMessage(
+                    chatId,
+                    `✅ *ALIGHT MOTION PURCHASED!*\n\n` +
+                    `📋 Order: #${orderId}\n` +
+                    `🔢 Quantity: ${quantity}\n` +
+                    `💵 Paid: Rp ${formatIDR(totalPrice)}\n` +
+                    `💳 Balance left: Rp ${formatIDR(newBalance)}\n\n` +
+                    `🔑 Credentials sent above.`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
+                            ]
+                        }
+                    }
+                ).catch(() => {});
+
+                bot.sendMessage(ADMIN_TELEGRAM_ID,
+                    `🆕 *ALIGHT MOTION SALE*\n\n` +
+                    `User: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')} (${userId})\n` +
+                    `Order: #${orderId}\n` +
+                    `Qty: ${quantity}\n` +
+                    `Price each: Rp ${formatIDR(alightPrice)}\n` +
+                    `Total: Rp ${formatIDR(totalPrice)}\n` +
+                    `Remaining Alight Motion: ${(getAlightMotionStock().accounts || []).length}`,
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+            } else {
+                updateBalance(userId, totalPrice);
+                updateOrder(orderId, { status: 'failed' });
+
+                bot.sendMessage(
+                    chatId,
+                    `❌ *DELIVERY FAILED*\n\n` +
+                    `Order: #${orderId}\n` +
+                    `Your payment has been refunded.\n\n` +
+                    `Please contact ${ADMIN_USERNAME} for help.`,
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+            }
+
+            delete userStates[chatId];
+        }
+
+        else if (data === 'pay_alight_qris') {
+            const alightStock = getAlightMotionStock();
+            const available = alightStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(50, available));
+            const state = userStates[chatId] || {};
+            const presetQuantity = state.selected_quantity;
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Alight Motion in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            if (!presetQuantity) {
+                userStates[chatId] = {
+                    state: 'awaiting_alight_quantity',
+                    payment_method: 'qris',
+                    userId: userId,
+                    user: query.from,
+                    max_quantity: maxQuantity
+                };
+
+                bot.editMessageText(
+                    `🔢 *ENTER QUANTITY*\n\n` +
+                    `📱 Paying via QRIS\n` +
+                    `💵 Price: ${formatAlightPriceSummary()}\n` +
+                    `📦 Available: ${available}\n` +
+                    `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                    `Send the number of Alight Motion accounts you want to buy.`,
+                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+                ).catch(() => {});
+                return;
+            }
+
+            const quantity = Math.min(presetQuantity, maxQuantity);
+            const alightPrice = getAlightUnitPrice(quantity);
+            const totalPrice = quantity * alightPrice;
+            const users = getUsers();
+
+            const orderId = getNextOrderId();
+            const order = {
+                order_id: orderId,
+                user_id: userId,
+                username: users[userId]?.username || query.from.username || 'unknown',
+                quantity: quantity,
+                total_quantity: quantity,
+                original_price: alightPrice,
+                total_price: totalPrice,
+                status: 'awaiting_payment',
+                payment_method: 'qris',
+                date: new Date().toISOString(),
+                product: 'alight_motion'
+            };
+
+            addOrder(order);
+
+            if (!users[userId]) {
+                addUser(userId, query.from);
+            }
+
+            const updatedUsers = getUsers();
+            updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+            saveJSON(USERS_FILE, updatedUsers);
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                    [{ text: '📝 My Orders', callback_data: 'my_orders' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
+            };
+
+            let orderMessage = `✅ *ALIGHT MOTION ORDER CREATED!*\n\n` +
+                `📋 Order ID: *#${orderId}*\n` +
+                `🔢 Quantity: ${quantity} account(s)\n` +
+                `💵 Price per account: Rp ${formatIDR(alightPrice)}\n` +
+                `💰 Total: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                `📱 Status: Awaiting Payment\n` +
+                `⏰ Expires in: ${ORDER_EXPIRY_MINUTES} minutes\n\n`;
+
+            bot.sendMessage(chatId,
+                `📱 *PAYMENT INSTRUCTIONS*\n\n` +
+                `${orderMessage}` +
+                `📸 Please DM ${ADMIN_USERNAME} with your payment proof to confirm.\n` +
+                `⚡ We will deliver after payment is verified.`,
+                { parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+
+            const pendingPayment = {
+                order_id: orderId,
+                user_id: userId,
+                amount: totalPrice,
+                created_at: new Date().toISOString()
+            };
+            addPendingPayment(pendingPayment);
+
+            bot.sendMessage(ADMIN_TELEGRAM_ID,
+                `📥 *NEW QRIS PAYMENT*\n\n` +
+                `Order ID: #${orderId}\n` +
+                `User: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')} (${userId})\n` +
+                `Amount: Rp ${formatIDR(totalPrice)}\n` +
+                `Quantity: ${quantity} Alight Motion account(s)\n\n` +
+                `Please verify payment.`,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: '✅ Verify Payment', callback_data: `verify_payment_${orderId}` },
+                                { text: '❌ Reject', callback_data: `reject_payment_${orderId}` }
+                            ]
+                        ]
+                    }
+                }
+            ).catch(() => {});
+
+            delete userStates[chatId];
+        }
+
+        else if (data === 'pay_perplexity_balance' || data === 'confirm_buy_perplexity') {
+            const perplexityStock = getPerplexityStock();
+            const available = perplexityStock.links?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(50, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Perplexity AI in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_perplexity_quantity',
+                payment_method: 'balance',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `💳 Paying with balance\n` +
+                `💵 Price: ${formatPerplexityPriceSummary()}\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of Perplexity AI links you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_perplexity_qris') {
+            const perplexityStock = getPerplexityStock();
+            const available = perplexityStock.links?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(50, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Perplexity AI in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_perplexity_quantity',
+                payment_method: 'qris',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `📱 Paying via QRIS\n` +
+                `💵 Price: ${formatPerplexityPriceSummary()}\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of Perplexity AI links you want to buy.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
             ).catch(() => {});
         }
@@ -7339,6 +7871,212 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 ).catch(() => {});
             }
             
+            delete userStates[chatId];
+        }
+
+        else if (state.state === 'awaiting_perplexity_quantity') {
+            const quantity = parseInt(text.replace(/\D/g, ''));
+            const paymentMethod = state.payment_method || 'balance';
+            const perplexityStock = getPerplexityStock();
+            const available = perplexityStock.links?.length || 0;
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const selectedQuantity = Math.min(quantity || 0, maxQuantity);
+
+            if (isNaN(quantity) || quantity < 1) {
+                bot.sendMessage(chatId, '❌ Please send a valid number!').catch(() => {});
+                return;
+            }
+
+            if (selectedQuantity !== quantity) {
+                bot.sendMessage(chatId, `⚠️ Maximum you can order now is ${maxQuantity} link(s).`).catch(() => {});
+                return;
+            }
+
+            if (quantity > available) {
+                bot.sendMessage(chatId, `❌ Only ${available} Perplexity AI link(s) available right now!`).catch(() => {});
+                return;
+            }
+
+            const unitPrice = getPerplexityUnitPrice(quantity);
+            const totalPrice = quantity * unitPrice;
+            const users = getUsers();
+
+            if (paymentMethod === 'balance') {
+                const balance = getBalance(userId);
+
+                if (balance < totalPrice) {
+                    const shortfall = totalPrice - balance;
+
+                    const keyboard = {
+                        inline_keyboard: [
+                            [{ text: '💵 Top Up via QRIS', callback_data: 'topup_balance' }],
+                            [{ text: '🔙 Back', callback_data: 'buy_perplexity' }]
+                        ]
+                    };
+
+                    bot.sendMessage(chatId,
+                        `⚠️ Balance not enough.\n\n` +
+                        `Requested: ${quantity} Perplexity AI link(s)\n` +
+                        `Total needed: Rp ${formatIDR(totalPrice)}\n` +
+                        `Current balance: Rp ${formatIDR(balance)}\n` +
+                        `Shortfall: Rp ${formatIDR(shortfall)}\n\n` +
+                        `Top up with QRIS then try again.`,
+                        { parse_mode: 'Markdown', reply_markup: keyboard }
+                    ).catch(() => {});
+                    return;
+                }
+
+                updateBalance(userId, -totalPrice);
+
+                const orderId = getNextOrderId();
+                const order = {
+                    order_id: orderId,
+                    user_id: userId,
+                    username: users[userId]?.username || msg.from.username || 'unknown',
+                    quantity: quantity,
+                    total_quantity: quantity,
+                    original_price: unitPrice,
+                    total_price: totalPrice,
+                    status: 'completed',
+                    payment_method: 'balance',
+                    date: new Date().toISOString(),
+                    completed_at: new Date().toISOString(),
+                    product: 'perplexity_ai'
+                };
+
+                addOrder(order);
+
+                if (!users[userId]) {
+                    addUser(userId, msg.from);
+                }
+
+                const updatedUsers = getUsers();
+                updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+                updatedUsers[userId].completed_orders = (updatedUsers[userId].completed_orders || 0) + 1;
+                saveJSON(USERS_FILE, updatedUsers);
+
+                const delivery = await deliverPerplexity(userId, orderId, quantity, unitPrice);
+                const newBalance = getBalance(userId);
+
+                if (delivery.success) {
+                    bot.sendMessage(
+                        chatId,
+                        `✅ *PERPLEXITY PURCHASED!*\n\n` +
+                        `📋 Order: #${orderId}\n` +
+                        `🔢 Quantity: ${quantity}\n` +
+                        `💵 Paid: Rp ${formatIDR(totalPrice)}\n` +
+                        `💳 Balance left: Rp ${formatIDR(newBalance)}\n\n` +
+                        `🔑 Credentials sent above.`,
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
+                                ]
+                            }
+                        }
+                    ).catch(() => {});
+
+                    bot.sendMessage(ADMIN_TELEGRAM_ID,
+                        `🆕 *PERPLEXITY SALE*\n\n` +
+                        `User: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')} (${userId})\n` +
+                        `Order: #${orderId}\n` +
+                    `Qty: ${quantity}\n` +
+                    `Price each: Rp ${formatIDR(unitPrice)}\n` +
+                    `Total: Rp ${formatIDR(totalPrice)}\n` +
+                    `Remaining Perplexity: ${(getPerplexityStock().links || []).length}`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(() => {});
+                } else {
+                    updateBalance(userId, totalPrice);
+                    updateOrder(orderId, { status: 'failed' });
+
+                    bot.sendMessage(
+                        chatId,
+                        `❌ *DELIVERY FAILED*\n\n` +
+                        `Order: #${orderId}\n` +
+                        `Your payment has been refunded.\n\n` +
+                        `Please contact ${ADMIN_USERNAME} for help.`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(() => {});
+                }
+            } else {
+                const orderId = getNextOrderId();
+                const order = {
+                    order_id: orderId,
+                    user_id: userId,
+                    username: users[userId]?.username || state.user?.username || msg.from.username || 'unknown',
+                    quantity: quantity,
+                    total_quantity: quantity,
+                    original_price: unitPrice,
+                    total_price: totalPrice,
+                    status: 'awaiting_payment',
+                    payment_method: 'qris',
+                    date: new Date().toISOString(),
+                    product: 'perplexity_ai'
+                };
+
+                addOrder(order);
+
+                if (!users[userId]) {
+                    addUser(userId, state.user || msg.from);
+                }
+
+                const updatedUsers = getUsers();
+                updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+                saveJSON(USERS_FILE, updatedUsers);
+
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                        [{ text: '📝 My Orders', callback_data: 'my_orders' }],
+                        [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                    ]
+                };
+
+                let orderMessage = `✅ *PERPLEXITY ORDER CREATED!*\n\n` +
+                    `📋 Order ID: *#${orderId}*\n` +
+                    `🔢 Quantity: ${quantity} link(s)\n` +
+                    `💵 Price per link: Rp ${formatIDR(unitPrice)}\n` +
+                    `💰 Total: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                    `📱 Status: Awaiting Payment\n` +
+                    `⏰ Expires in: ${ORDER_EXPIRY_MINUTES} minutes\n\n`;
+
+                bot.sendMessage(chatId,
+                    `📱 *PAYMENT INSTRUCTIONS*\n\n` +
+                    `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                    `For QRIS, DM the admin directly to get the code and confirm.`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: `📱 DM Admin ${ADMIN_USERNAME}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }]
+                            ]
+                        }
+                    }
+                ).catch(() => {});
+
+                orderMessage += `💡 Send payment proof photo with caption: #${orderId}\n` +
+                    `Or contact ${ADMIN_USERNAME} for payment details/QRIS`;
+
+                bot.sendMessage(chatId, orderMessage, {
+                    parse_mode: 'Markdown',
+                    reply_markup: keyboard
+                }).catch(() => {});
+
+                bot.sendMessage(ADMIN_TELEGRAM_ID,
+                    `📝 *NEW PERPLEXITY ORDER*\n\n` +
+                    `Order ID: #${orderId}\n` +
+                    `Customer: @${escapeMarkdown(users[userId]?.username || 'unknown')}\n` +
+                    `User ID: ${userId}\n` +
+                    `Quantity: ${quantity} link(s)\n` +
+                    `💰 Total: Rp ${formatIDR(totalPrice)}\n` +
+                    `Status: Awaiting Payment\n\n` +
+                    `💡 Waiting for payment proof...`,
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+            }
+
             delete userStates[chatId];
         }
 
