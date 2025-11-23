@@ -28,7 +28,9 @@ const MIN_TOPUP_AMOUNT = 0;
 const MAX_TOPUP_AMOUNT = 100000;
 const ACCOUNT_PRICE_IDR = 650;
 const GPT_BASICS_PRICE_IDR = 50;
-const PERPLEXITY_PRICE_IDR = 4000;
+const PERPLEXITY_PRICE_IDR = 650;
+const PERPLEXITY_BULK_PRICE_IDR = 500;
+const PERPLEXITY_BULK_THRESHOLD = 5;
 const AUTO_BROADCAST_MIN_STOCK = 1;
 
 // File paths
@@ -196,6 +198,19 @@ function updateGptBasicsStock(accounts = []) {
 
 function getPerplexityStock() {
     return loadJSON(PERPLEXITY_FILE, { links: [] });
+}
+
+function getPerplexityUnitPrice(quantity = 1) {
+    if (quantity >= PERPLEXITY_BULK_THRESHOLD) {
+        return PERPLEXITY_BULK_PRICE_IDR;
+    }
+    return PERPLEXITY_PRICE_IDR;
+}
+
+function formatPerplexityPriceSummary() {
+    const base = `Rp ${formatIDR(PERPLEXITY_PRICE_IDR)}`;
+    const bulk = `5+ Rp ${formatIDR(PERPLEXITY_BULK_PRICE_IDR)}`;
+    return `${base} | ${bulk}`;
 }
 
 function updatePerplexityStock(links = []) {
@@ -1215,7 +1230,7 @@ function broadcastPerplexityRestock(addedCount, totalCount) {
         `📤 Added: *${addedCount}* link${addedCount > 1 ? 's' : ''}`,
         `🔗 Total Stock: *${totalCount}* ready to claim`,
         '',
-        `💵 Price: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)} (no bulk)`,
+        `💵 Price: ${formatPerplexityPriceSummary()}`,
         '⚡ Order now before stock runs out!'
     ].join('\n');
 
@@ -1748,15 +1763,15 @@ bot.onText(/\/start/, (msg) => {
                     ],
                     [
                         { text: '🧠 Perplexity AI', callback_data: 'admin_perplexity' },
-                        { text: '🛒 Custom Order', callback_data: 'admin_custom_order' }
+                        { text: '💵 Pricing', callback_data: 'admin_pricing' }
                     ],
                     [
-                        { text: '💵 Pricing', callback_data: 'admin_pricing' },
-                        { text: '🎟️ Coupons', callback_data: 'admin_coupons' }
+                        { text: '🎟️ Coupons', callback_data: 'admin_coupons' },
+                        { text: '📋 Pending Top-ups', callback_data: 'admin_pending_topups' }
                     ],
                     [
                         { text: '📱 GoPay', callback_data: 'admin_qris' },
-                        { text: '📋 Pending Top-ups', callback_data: 'admin_pending_topups' }
+                        { text: '💰 Add Balance', callback_data: 'admin_add_balance' }
                     ],
                     [
                         { text: '💰 Add Balance', callback_data: 'admin_add_balance' },
@@ -1814,7 +1829,7 @@ bot.onText(/\/start/, (msg) => {
             inline_keyboard: [
                 [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                 [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
-                [{ text: `🧠 Perplexity AI (Rp ${formatIDR(PERPLEXITY_PRICE_IDR)})`, callback_data: 'buy_perplexity' }],
+                [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                 [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
                 [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
                 [{ text: '📦 Stock', callback_data: 'check_stock' }],
@@ -1827,9 +1842,9 @@ bot.onText(/\/start/, (msg) => {
                 `🎉 *Welcome to Spotify Store!*\n\n` +
                 `Hi ${escapeMarkdown(user.first_name)}! 👋\n\n` +
                 `🎵 Spotify Student PREMIUM\n` +
-                `🔑 Verified Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}\n` +
-                `🤖 GPT Basics: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)}\n` +
-                `🧠 Perplexity AI: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)}\n` +
+                `🔑 Verified Spotify Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}\n` +
+                `🤖 GPT Basics Account: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)}\n` +
+                `🧠 Perplexity AI Link: ${formatPerplexityPriceSummary()}\n` +
                 `💳 Balance: Rp ${formatIDR(balance)}\n` +
                 `📦 Stock: ${linkAvailable} links\n` +
                 `🔑 Accounts in stock: ${accountAvailable}\n` +
@@ -3763,11 +3778,12 @@ else if (data.startsWith('claim_gift_')) {
 
             bot.editMessageText(
                 `🧠 *BUY PERPLEXITY AI*\n\n` +
-                `💵 Price: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)} (no bulk)\n` +
+                `💵 Price: ${formatPerplexityPriceSummary()}\n` +
                 `📦 Links available: ${available}\n\n` +
                 `${statusLine}\n\n` +
                 `🔗 Access via https://perplexity.ai\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} link(s) depending on stock.`,
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} link(s) depending on stock.\n` +
+                `📱 For QRIS please DM ${ADMIN_USERNAME} to get the code.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -3924,7 +3940,7 @@ else if (data.startsWith('claim_gift_')) {
             bot.editMessageText(
                 `🔢 *ENTER QUANTITY*\n\n` +
                 `💳 Paying with balance\n` +
-                `💵 Price: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)} per link\n` +
+                `💵 Price: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)} each (5+ Rp ${formatIDR(PERPLEXITY_BULK_PRICE_IDR)})\n` +
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
                 `Send the number of Perplexity AI links you want to buy.`,
@@ -3956,7 +3972,7 @@ else if (data.startsWith('claim_gift_')) {
             bot.editMessageText(
                 `🔢 *ENTER QUANTITY*\n\n` +
                 `📱 Paying via QRIS\n` +
-                `💵 Price: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)} per link\n` +
+                `💵 Price: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)} each (5+ Rp ${formatIDR(PERPLEXITY_BULK_PRICE_IDR)})\n` +
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
                 `Send the number of Perplexity AI links you want to buy.`,
@@ -4096,7 +4112,7 @@ else if (data.startsWith('claim_gift_')) {
 
             bot.editMessageText(
                 `🎵 *SPOTIFY OPTIONS*\n\n` +
-                `Choose between ordering links or buying ready accounts.`,
+                `Choose between ordering links or buying verified accounts.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -4104,8 +4120,8 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'menu_gpt') {
             const keyboard = {
                 inline_keyboard: [
-                    [{ text: `🤖 GPT Basics (Rp ${formatIDR(GPT_BASICS_PRICE_IDR)})`, callback_data: 'buy_gpt_basics' }],
-                    [{ text: '📩 GPT via Invite', callback_data: 'gpt_invite_info' }],
+                    [{ text: `🤖 GPT Basics Accounts (Rp ${formatIDR(GPT_BASICS_PRICE_IDR)})`, callback_data: 'buy_gpt_basics' }],
+                    [{ text: '📩 GPT via Invite Accounts', callback_data: 'gpt_invite_info' }],
                     [{ text: '🎬 Alight Motion Accounts', callback_data: 'alight_motion_info' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
@@ -4128,7 +4144,8 @@ else if (data.startsWith('claim_gift_')) {
             bot.editMessageText(
                 `📩 *GPT VIA INVITE*\n\n` +
                 `Send your GPT invite details here and the admin will process them.\n` +
-                `You can forward the invite message or paste the email/link.`,
+                `You can forward the invite message or paste the email/link.\n\n` +
+                `Payment: balance or QRIS — DM ${ADMIN_USERNAME} to confirm.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -4209,13 +4226,16 @@ else if (data.startsWith('claim_gift_')) {
             
             bot.editMessageText(
                 `📦 *STOCK AVAILABLE*\n\n` +
-                `Links available: ${stock.links?.length || 0}\n` +
-                `Accounts available: ${accountAvailable}\n` +
-                `GPT Basics available: ${gptAvailable}\n` +
-                `Perplexity links available: ${perplexityAvailable}\n\n` +
-                `💰 Current Prices:\n` +
+                `🎵 Spotify Links: ${stock.links?.length || 0}\n` +
+                `🔑 Spotify Verified Accounts: ${accountAvailable} (Rp ${formatIDR(ACCOUNT_PRICE_IDR)})\n` +
+                `🤖 GPT Basics Accounts: ${gptAvailable} (Rp ${formatIDR(GPT_BASICS_PRICE_IDR)})\n` +
+                `📩 GPT via Invite Accounts: DM ${ADMIN_USERNAME}\n` +
+                `🧠 Perplexity Links: ${perplexityAvailable} (${formatPerplexityPriceSummary()})\n` +
+                `🎬 Alight Motion Accounts: DM ${ADMIN_USERNAME}\n\n` +
+                `💰 Spotify Link Pricing:\n` +
                 `${pricingText}\n` +
-                `🤖 GPT Basics: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)}\n\n` +
+                `🤖 GPT Basics fixed: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)}\n` +
+                `🧠 Perplexity: ${formatPerplexityPriceSummary()}\n\n` +
                 `🎟️ Use coupon codes for extra discounts!`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
@@ -4361,7 +4381,7 @@ else if (data.startsWith('claim_gift_')) {
                 inline_keyboard: [
                     [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                     [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
-                    [{ text: `🧠 Perplexity AI (Rp ${formatIDR(PERPLEXITY_PRICE_IDR)})`, callback_data: 'buy_perplexity' }],
+                    [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                     [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
                     [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
                     [{ text: '🎁 Bonus Deals', callback_data: 'view_bonus_deals' }],
@@ -4379,6 +4399,8 @@ else if (data.startsWith('claim_gift_')) {
                     `Hi ${escapeMarkdown(query.from.first_name)}! 👋\n\n` +
                     `💳 Balance: Rp ${formatIDR(balance)}\n` +
                     `🔑 Verified Account: Rp ${formatIDR(ACCOUNT_PRICE_IDR)}\n` +
+                    `🤖 GPT Basics: Rp ${formatIDR(GPT_BASICS_PRICE_IDR)}\n` +
+                    `🧠 Perplexity AI: ${formatPerplexityPriceSummary()}\n` +
                     `📦 Stock: ${stock.current_stock} links\n\n` +
                     `💰 Prices:\n${pricingText}${bonusText}`,
                     { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
@@ -4393,10 +4415,12 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '📊 Stats', callback_data: 'admin_stats' }, { text: '📝 Orders', callback_data: 'admin_orders' }],
                     [{ text: '👥 Users', callback_data: 'admin_users' }, { text: '💰 Revenue', callback_data: 'admin_revenue' }],
                     [{ text: '📈 Analytics', callback_data: 'admin_analytics' }, { text: '📦 Stock', callback_data: 'admin_stock' }],
-                    [{ text: '💵 Pricing', callback_data: 'admin_pricing' }, { text: '🎟️ Coupons', callback_data: 'admin_coupons' }],
+                    [{ text: '🔑 Accounts', callback_data: 'admin_accounts' }, { text: '🤖 GPT Basics', callback_data: 'admin_gpt_basics' }],
+                    [{ text: '🧠 Perplexity AI', callback_data: 'admin_perplexity' }, { text: '💵 Pricing', callback_data: 'admin_pricing' }],
+                    [{ text: '🎟️ Coupons', callback_data: 'admin_coupons' }, { text: '📋 Pending Top-ups', callback_data: 'admin_pending_topups' }],
+                    [{ text: '📱 GoPay', callback_data: 'admin_qris' }, { text: '💰 Add Balance', callback_data: 'admin_add_balance' }],
+                    [{ text: '🎁 Create Gift', callback_data: 'admin_create_gift' }, { text: '📋 View Gifts', callback_data: 'admin_view_gifts' }],
                     [{ text: '🎁 Bonuses', callback_data: 'admin_bonuses' }],
-                    [{ text: '📱 GoPay', callback_data: 'admin_qris' }, { text: '🛒 Custom Order', callback_data: 'admin_custom_order' }],
-                    [{ text: '📋 Pending Top-ups', callback_data: 'admin_pending_topups' }, { text: '💰 Add Balance', callback_data: 'admin_add_balance' }],
                     [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }],
                     [{ text: '📢 Broadcast', callback_data: 'admin_broadcast' }]
                 ]
@@ -5124,7 +5148,8 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 return;
             }
 
-            const totalPrice = quantity * PERPLEXITY_PRICE_IDR;
+            const unitPrice = getPerplexityUnitPrice(quantity);
+            const totalPrice = quantity * unitPrice;
             const users = getUsers();
 
             if (paymentMethod === 'balance') {
@@ -5161,7 +5186,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                     username: users[userId]?.username || msg.from.username || 'unknown',
                     quantity: quantity,
                     total_quantity: quantity,
-                    original_price: PERPLEXITY_PRICE_IDR,
+                    original_price: unitPrice,
                     total_price: totalPrice,
                     status: 'completed',
                     payment_method: 'balance',
@@ -5181,7 +5206,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 updatedUsers[userId].completed_orders = (updatedUsers[userId].completed_orders || 0) + 1;
                 saveJSON(USERS_FILE, updatedUsers);
 
-                const delivery = await deliverPerplexity(userId, orderId, quantity);
+                const delivery = await deliverPerplexity(userId, orderId, quantity, unitPrice);
                 const newBalance = getBalance(userId);
 
                 if (delivery.success) {
@@ -5207,9 +5232,10 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                         `🆕 *PERPLEXITY SALE*\n\n` +
                         `User: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')} (${userId})\n` +
                         `Order: #${orderId}\n` +
-                        `Qty: ${quantity}\n` +
-                        `Total: Rp ${formatIDR(totalPrice)}\n` +
-                        `Remaining Perplexity: ${(getPerplexityStock().links || []).length}`,
+                    `Qty: ${quantity}\n` +
+                    `Price each: Rp ${formatIDR(unitPrice)}\n` +
+                    `Total: Rp ${formatIDR(totalPrice)}\n` +
+                    `Remaining Perplexity: ${(getPerplexityStock().links || []).length}`,
                         { parse_mode: 'Markdown' }
                     ).catch(() => {});
                 } else {
@@ -5233,7 +5259,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                     username: users[userId]?.username || state.user?.username || msg.from.username || 'unknown',
                     quantity: quantity,
                     total_quantity: quantity,
-                    original_price: PERPLEXITY_PRICE_IDR,
+                    original_price: unitPrice,
                     total_price: totalPrice,
                     status: 'awaiting_payment',
                     payment_method: 'qris',
@@ -5261,47 +5287,28 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
 
                 let orderMessage = `✅ *PERPLEXITY ORDER CREATED!*\n\n` +
                     `📋 Order ID: *#${orderId}*\n` +
-                    `🔢 Quantity: ${quantity} account(s)\n` +
-                    `💵 Price per account: Rp ${formatIDR(PERPLEXITY_PRICE_IDR)}\n` +
+                    `🔢 Quantity: ${quantity} link(s)\n` +
+                    `💵 Price per link: Rp ${formatIDR(unitPrice)}\n` +
                     `💰 Total: *Rp ${formatIDR(totalPrice)}*\n\n` +
                     `📱 Status: Awaiting Payment\n` +
                     `⏰ Expires in: ${ORDER_EXPIRY_MINUTES} minutes\n\n`;
 
-                const gopay = getQRIS();
-                if (gopay.file_id) {
-                    bot.sendPhoto(chatId, gopay.file_id, {
-                        caption:
-                            `📱 *PAYMENT METHOD - GOPAY/QRIS*\n\n` +
-                            `Scan this QR code to pay\n` +
-                            `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
-                            `After payment, send screenshot with:\n` +
-                            `Caption: #${orderId}\n\n` +
-                            `⏰ Order expires in ${ORDER_EXPIRY_MINUTES} minutes`,
+                bot.sendMessage(chatId,
+                    `📱 *PAYMENT INSTRUCTIONS*\n\n` +
+                    `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                    `For QRIS, DM the admin directly to get the code and confirm.`,
+                    {
                         parse_mode: 'Markdown',
                         reply_markup: {
                             inline_keyboard: [
-                                [{ text: '📱 DM Admin @itsmeaab', url: 'https://t.me/itsmeaab' }]
+                                [{ text: `📱 DM Admin ${ADMIN_USERNAME}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }]
                             ]
                         }
-                    }).catch(() => {});
-                } else {
-                    bot.sendMessage(chatId,
-                        `📱 *PAYMENT INSTRUCTIONS*\n\n` +
-                        `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
-                        `Contact admin for payment details:`,
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '📱 DM Admin @itsmeaab', url: 'https://t.me/itsmeaab' }]
-                                ]
-                            }
-                        }
-                    ).catch(() => {});
-                }
+                    }
+                ).catch(() => {});
 
                 orderMessage += `💡 Send payment proof photo with caption: #${orderId}\n` +
-                    `Or contact ${ADMIN_USERNAME} for payment details`;
+                    `Or contact ${ADMIN_USERNAME} for payment details/QRIS`;
 
                 bot.sendMessage(chatId, orderMessage, {
                     parse_mode: 'Markdown',
@@ -5313,7 +5320,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                     `Order ID: #${orderId}\n` +
                     `Customer: @${escapeMarkdown(users[userId]?.username || 'unknown')}\n` +
                     `User ID: ${userId}\n` +
-                    `Quantity: ${quantity} account(s)\n` +
+                    `Quantity: ${quantity} link(s)\n` +
                     `💰 Total: Rp ${formatIDR(totalPrice)}\n` +
                     `Status: Awaiting Payment\n\n` +
                     `💡 Waiting for payment proof...`,
@@ -5748,7 +5755,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                     `Order ID: #${orderId}\n` +
                     `Customer: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')}\n` +
                     `User ID: ${userId}\n` +
-                    `Quantity: ${quantity} account(s)\n` +
+                    `Quantity: ${quantity} link(s)\n` +
                     `💰 Total: Rp ${formatIDR(totalPrice)}\n` +
                     `Status: Awaiting Payment\n\n` +
                     `💡 Waiting for payment proof...`,
