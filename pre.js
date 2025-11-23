@@ -1326,7 +1326,7 @@ function saveSpotifyUrl(student, url, verificationId, countryConfig, uploadStats
     }
 }
 
-// ✅ MODIFIED MAIN PROCESSOR - FORCE UPLOAD EVEN FOR SSO SUCCESS
+// ✅ MAIN PROCESSOR - RESPECT SSO SUCCESSES BUT STILL FALL BACK TO UPLOADS WHEN NEEDED
 async function processStudent(student, sessionId, collegeMatcher, deleteManager, countryConfig, statsTracker) {
     const session = new VerificationSession(sessionId, countryConfig);
     let college = null;
@@ -1403,7 +1403,9 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
                 collegeMatcher.addFailure();
                 statsTracker.recordCollegeAttempt(college.id, college.name, false);
                 return null;
-            } else {
+            }
+
+            if (ssoStatus.status !== 'SUCCESS') {
                 console.log(`[${sessionId}] ⏳ [${countryConfig.flag}] SSO verification pending — will proceed with upload for safety`);
             }
         }
@@ -1454,11 +1456,7 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
             return null;
         }
 
-        if (ssoInstantSuccess) {
-            console.log(`[${sessionId}] ⏭️ [${countryConfig.flag}] SSO instant success not finalized — proceeding to upload for verification`);
-        } else {
-            console.log(`[${sessionId}] ⏩ [${countryConfig.flag}] Proceeding to upload step`);
-        }
+        console.log(`[${sessionId}] ${ssoInstantSuccess ? '⏭️' : '⏩'} [${countryConfig.flag}] Proceeding to upload step`);
 
         if (stepResult === 'invalid_college' || stepResult === 'error') {
             console.log(`[${sessionId}] ❌ [${countryConfig.flag}] INVALID COLLEGE or ERROR`);
@@ -1472,12 +1470,7 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
         // STEP 5: Find all student files
         const files = findStudentFiles(student.studentId);
         if (files.length === 0) {
-            console.log(`[${sessionId}] ⚠️ [${countryConfig.flag}] No files found for ${ssoInstantSuccess || ssoAlreadySuccess ? 'forced ' : ''}upload`);
-
-            // ✅ Force policy: even with SSO success we require an upload
-            if (ssoInstantSuccess || ssoAlreadySuccess) {
-                console.log(`[${sessionId}] ❌ [${countryConfig.flag}] SSO success without files cannot be accepted — force upload required`);
-            }
+            console.log(`[${sessionId}] ⚠️ [${countryConfig.flag}] No files found for upload`);
 
             deleteManager.markStudentFailed(student.studentId);
             collegeMatcher.addFailure();
@@ -1486,14 +1479,14 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
             return null;
         }
         
-        console.log(`[${sessionId}] 📁 [${countryConfig.flag}] Found ${files.length} file(s) for ${ssoInstantSuccess || ssoAlreadySuccess ? 'FORCE' : ''} upload`);
+        console.log(`[${sessionId}] 📁 [${countryConfig.flag}] Found ${files.length} file(s) ready for upload`);
         
         // STEP 6: Try uploading ALL files until legitimate verification success
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             const attemptNumber = i + 1;
             
-            console.log(`[${sessionId}] 📤 [${countryConfig.flag}] ${ssoInstantSuccess || ssoAlreadySuccess ? 'FORCE ' : ''}Upload attempt ${attemptNumber}/${files.length}: ${file.name}`);
+            console.log(`[${sessionId}] 📤 [${countryConfig.flag}] Upload attempt ${attemptNumber}/${files.length}: ${file.name}`);
             
             const uploadResult = await session.uploadDocument(file.path, attemptNumber);
             
@@ -1573,7 +1566,7 @@ async function processBulk(students, collegeMatcher, deleteManager, countryConfi
 ║            Program ID: ${countryConfig.programId}              ║
 ║            Country: ${countryConfig.flag} ${countryConfig.name.padEnd(25)} ║
 ║            Source: ONLY ${countryConfig.collegesFile.padEnd(20)} ║
-║            Upload: Force upload even for SSO success            ║
+║            Upload: Skip upload when SSO already succeeds        ║
 ║            Target: ${targetLinks.toString().padStart(4)} links to generate                        ║
 ╚══════════════════════════════════════════════════════════════════╝
 `));
@@ -1585,7 +1578,7 @@ async function processBulk(students, collegeMatcher, deleteManager, countryConfi
     console.log(chalk.blue(`⚡ Concurrent: ${CONFIG.maxConcurrent} workers`));
     console.log(chalk.green(`📚 Source: ONLY ${countryConfig.collegesFile} - EXACT MATCHES ONLY`));
     console.log(chalk.red(`⛔ NO FALLBACK: Students without exact matches will be skipped`));
-    console.log(chalk.yellow(`🔄 FORCE UPLOAD: Will upload files even for SSO success`));
+    console.log(chalk.yellow(`✨ SSO-AWARE: Will skip uploads when SSO already succeeded`));
     console.log(chalk.yellow(`⏱️ VERIFICATION TIMEOUT: ${CONFIG.verificationTimeout} seconds after each upload`));
     console.log(chalk.red(`🗑️ Auto-delete: Immediate cleanup after processing`));
     console.log(chalk.green(`📁 Output: ${CONFIG.outputFile}`));
@@ -1709,7 +1702,7 @@ function displayDetailedAnalysis(analysis, countryConfig, matcherStats) {
         }
         if (successTypes.sso_force_upload > 0) {
             const pct = ((successTypes.sso_force_upload / total) * 100).toFixed(1);
-            console.log(chalk.cyan(`🔄 SSO Force Upload Success: ${successTypes.sso_force_upload} (${pct}%)`));
+            console.log(chalk.cyan(`🔄 SSO Upload Success (Pending SSO): ${successTypes.sso_force_upload} (${pct}%)`));
         }
     }
     
@@ -1797,7 +1790,7 @@ async function main() {
     console.log(chalk.cyan('🎵 Spotify SheerID - MULTI-COUNTRY MODE (24 COUNTRIES)'));
     console.log(chalk.green('🌍 All countries use the same program ID: 63fd266996552d469aea40e1'));
     console.log(chalk.yellow('🔒 100% LEGITIMATE - No fake links, only verified links'));
-    console.log(chalk.cyan('🔄 FORCE UPLOAD - Files uploaded even for SSO success'));
+    console.log(chalk.cyan('✨ SSO-AWARE UPLOADS - Skip upload when SSO already succeeded'));
     
     try {
         // SELECT COUNTRY
@@ -1811,7 +1804,7 @@ async function main() {
         console.log(chalk.blue(`🆔 Program ID: ${countryConfig.programId}`));
         console.log(chalk.blue(`📚 Using colleges file: ${countryConfig.collegesFile}`));
         console.log(chalk.red(`⛔ LEGIT ONLY: Only exact JSON matches will be processed`));
-        console.log(chalk.yellow(`🔄 FORCE UPLOAD: Files will be uploaded even for SSO success`));
+        console.log(chalk.yellow(`✨ SSO-AWARE: Files won't upload if SSO already succeeded`));
         console.log(chalk.yellow(`⏱️ TIMEOUT: ${CONFIG.verificationTimeout} seconds after each upload`));
         console.log(chalk.red(`🔒 NO FAKE LINKS: Only legitimate verified links saved`));
         
@@ -1892,7 +1885,7 @@ async function main() {
             console.log(chalk.green(`✅ Working Colleges: ${stats.workingColleges} confirmed`));
             console.log(chalk.red(`❌ Invalid Colleges: ${stats.invalidColleges} marked`));
             console.log(chalk.yellow(`🔄 Upload Retries: ${stats.uploadRetries} total attempts`));
-            console.log(chalk.cyan(`🔄 SSO Force Uploads: ${analysis.successTypes.sso_force_upload} successful`));
+            console.log(chalk.cyan(`🔄 SSO Uploads after SSO pending: ${analysis.successTypes.sso_force_upload} successful`));
             
             if (CONFIG.targetReached) {
                 console.log(chalk.green(`\n🎯 TARGET ACHIEVED! Successfully generated ${results.length} links as requested.`));
@@ -1930,7 +1923,7 @@ console.log(chalk.cyan(`
 🔒 100% LEGITIMATE - No fake links, only verified links
 📚 Source: Reads country-specific JSON files - EXACT MATCHES ONLY
 ⛔ NO FALLBACK: Students without exact matches are skipped
-🔄 FORCE UPLOAD: Files uploaded even for SSO success
+✨ SSO-AWARE: Skip uploads when SSO already succeeded
 ⏱️ SMART TIMEOUT: ${CONFIG.verificationTimeout}s verification wait after each upload
 📤 BULK: ${CONFIG.maxConcurrent} concurrent workers, ${CONFIG.batchSize} batch size
 🗑️ DELETE: Immediate cleanup of processed students and receipts
