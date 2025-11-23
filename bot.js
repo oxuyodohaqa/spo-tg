@@ -1774,9 +1774,10 @@ bot.onText(/\/start/, (msg) => {
                         { text: '💰 Add Balance', callback_data: 'admin_add_balance' }
                     ],
                     [
-                        { text: '🎁 Create Gift', callback_data: 'admin_create_gift' },
-                        { text: '📋 View Gifts', callback_data: 'admin_view_gifts' }
+                        { text: '💰 Add Balance', callback_data: 'admin_add_balance' },
+                        { text: '🎁 Create Gift', callback_data: 'admin_create_gift' }
                     ],
+                    [{ text: '📋 View Gifts', callback_data: 'admin_view_gifts' }],
                     [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }],
                     [
                         { text: '📢 Broadcast', callback_data: 'admin_broadcast' }
