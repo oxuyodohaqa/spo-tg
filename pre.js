@@ -1387,7 +1387,19 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
         
         // STEP 4: Skip SSO wait and proceed directly to upload
         let stepResult = 'docUpload';
-        const ssoAlreadySuccess = false;
+        let ssoAlreadySuccess = false;
+
+        const preUploadStatus = await session.checkStatus(1);
+        if (preUploadStatus.status === 'SUCCESS') {
+            console.log(`[${sessionId}] ⚡ [${countryConfig.flag}] SSO success detected - forcing upload and waiting for verification`);
+            ssoAlreadySuccess = true;
+        } else if (preUploadStatus.status === 'REJECTED') {
+            console.log(`[${sessionId}] ❌ [${countryConfig.flag}] SSO status shows rejection before upload`);
+            deleteManager.markStudentRejected(student.studentId);
+            collegeMatcher.addFailure();
+            statsTracker.recordCollegeAttempt(college.id, college.name, false);
+            return null;
+        }
 
         if (ssoInstantSuccess) {
             console.log(`[${sessionId}] ⏭️ [${countryConfig.flag}] SSO instant success - skipping wait and forcing upload`);
