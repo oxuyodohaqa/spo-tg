@@ -256,8 +256,12 @@ function getPerplexityUnitPrice(quantity = 1) {
 
 function formatPerplexityPriceSummary() {
     const perplexity = getPerplexityConfig();
+    const threshold = Math.max(1, perplexity.threshold);
+    if (perplexity.base === perplexity.bulk) {
+        return `Rp ${formatIDR(perplexity.base)} each`;
+    }
     const base = `1x Rp ${formatIDR(perplexity.base)}`;
-    const bulk = `${perplexity.threshold}+ Rp ${formatIDR(perplexity.bulk)} each`;
+    const bulk = `${threshold}+ Rp ${formatIDR(perplexity.bulk)} each`;
     return `${base} | ${bulk}`;
 }
 
@@ -2111,6 +2115,7 @@ bot.onText(/\/start/, (msg) => {
             inline_keyboard: [
                 [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                 [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
+                [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                 [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                 [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
                 [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
@@ -5735,14 +5740,13 @@ else if (data.startsWith('claim_gift_')) {
                 inline_keyboard: [
                     [{ text: `🤖 ${getProductLabel('gpt_basic', 'GPT Basics Accounts')} (Rp ${formatIDR(getGptBasicsPrice())})`, callback_data: 'buy_gpt_basics' }],
                     [{ text: `📩 ${getProductLabel('gpt_invite', 'GPT via Invite')} (${formatGptInvitePriceSummary()})`, callback_data: 'buy_gpt_invite' }],
-                    [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
 
             bot.editMessageText(
-                `🤖 *GPT & CREATIVE OPTIONS*\n\n` +
-                `Choose a product to buy from stock.`,
+                `🤖 *GPT OPTIONS*\n\n` +
+                `Choose a GPT product to buy from stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -5875,6 +5879,7 @@ else if (data.startsWith('claim_gift_')) {
                 inline_keyboard: [
                     [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                     [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
+                    [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                     [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                     [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
                     [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
@@ -6593,14 +6598,13 @@ else if (data.startsWith('claim_gift_')) {
                 inline_keyboard: [
                     [{ text: `🤖 ${getProductLabel('gpt_basic', 'GPT Basics Accounts')} (Rp ${formatIDR(getGptBasicsPrice())})`, callback_data: 'buy_gpt_basics' }],
                     [{ text: `📩 ${getProductLabel('gpt_invite', 'GPT via Invite')} (Rp ${formatIDR(getGptInvitePrice())})`, callback_data: 'buy_gpt_invite' }],
-                    [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
 
             bot.editMessageText(
-                `🤖 *GPT & CREATIVE OPTIONS*\n\n` +
-                `Choose a product to buy from stock.`,
+                `🤖 *GPT OPTIONS*\n\n` +
+                `Choose a GPT product to buy from stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -6806,14 +6810,13 @@ else if (data.startsWith('claim_gift_')) {
                 inline_keyboard: [
                     [{ text: `🤖 ${getProductLabel('gpt_basic', 'GPT Basics Accounts')} (Rp ${formatIDR(getGptBasicsPrice())})`, callback_data: 'buy_gpt_basics' }],
                     [{ text: `📩 ${getProductLabel('gpt_invite', 'GPT via Invite')} (Rp ${formatIDR(getGptInvitePrice())})`, callback_data: 'buy_gpt_invite' }],
-                    [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (Rp ${formatIDR(getAlightMotionPrice())})`, callback_data: 'buy_alight_motion' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
 
             bot.editMessageText(
-                `🤖 *GPT & CREATIVE OPTIONS*\n\n` +
-                `Choose a product to buy from stock.`,
+                `🤖 *GPT OPTIONS*\n\n` +
+                `Choose a GPT product to buy from stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -7041,6 +7044,7 @@ else if (data.startsWith('claim_gift_')) {
                 inline_keyboard: [
                     [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                     [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
+                    [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                     [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                     [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
                     [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
