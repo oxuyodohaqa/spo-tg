@@ -4598,45 +4598,6 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
-        else if (data === 'pay_account_balance' || data === 'confirm_buy_account') {
-            const accountStock = getAccountStock();
-            const available = accountStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
-
-            if (available === 0) {
-                bot.answerCallbackQuery(query.id, {
-                    text: '❌ No accounts in stock!',
-                    show_alert: true
-                }).catch(() => {});
-                return;
-            }
-
-            const keyboard = {
-                inline_keyboard: [
-                    [{ text: '💳 Pay with Balance', callback_data: 'pay_gpt_invite_balance' }],
-                    [{ text: '📱 Pay via QRIS', callback_data: 'pay_gpt_invite_qris' }],
-                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
-                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
-                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
-                ]
-            };
-
-            const statusLine = available === 0
-                ? '❌ Out of stock! Add more GPT via invite first.'
-                : canBuy
-                    ? '✅ Choose payment method below.'
-                    : '⚠️ Not enough balance. Please top up.';
-
-            bot.editMessageText(
-                `📩 *BUY GPT VIA INVITE*\n\n` +
-                `💵 Price: Rp ${formatIDR(getGptInvitePrice())} (no bulk)\n` +
-                `📦 Accounts available: ${available}\n\n` +
-                `${statusLine}\n\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
-        }
-
         else if (data === 'buy_alight_motion') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
@@ -5697,32 +5658,31 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            const keyboard = {
-                inline_keyboard: [
-                    [{ text: '💳 Pay with Balance', callback_data: 'pay_gpt_invite_balance' }],
-                    [{ text: '📱 Pay via QRIS', callback_data: 'pay_gpt_invite_qris' }],
-                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
-                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
-                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
-                ]
+            userStates[chatId] = {
+                state: 'awaiting_account_quantity',
+                payment_method: 'balance',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
             };
-            
+
             bot.editMessageText(
-                `💰 *BUY WITH BALANCE*\n\n` +
-                `Your Balance: Rp ${formatIDR(balance)}\n` +
-                `Stock: ${stock.current_stock} links\n` +
-                `Min Price: Rp ${formatIDR(firstPrice)}/link\n\n` +
-                `${canBuyWithBalance ? '✅ Ready to order!' : '❌ Insufficient balance or out of stock\n\n💡 Top up to add balance!'}`,
-            { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `💳 Paying with balance\n` +
+                `💵 Price: Rp ${formatIDR(getAccountPrice())} per account\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
             ).catch(() => {});
         }
-        
+
         else if (data === 'confirm_balance_order') {
             const balance = getBalance(userId);
             const stock = getStock();
             const pricing = getPricing();
             const firstPrice = pricing[Object.keys(pricing)[0]];
-            
+
             if (balance < firstPrice) {
                 bot.answerCallbackQuery(query.id, {
                     text: '❌ Insufficient balance!',
@@ -5730,7 +5690,7 @@ else if (data.startsWith('claim_gift_')) {
                 }).catch(() => {});
                 return;
             }
-            
+
             if (stock.current_stock === 0 || stock.links.length === 0) {
                 bot.answerCallbackQuery(query.id, {
                     text: '❌ Out of stock!',
@@ -5738,18 +5698,19 @@ else if (data.startsWith('claim_gift_')) {
                 }).catch(() => {});
                 return;
             }
-            
+
             userStates[chatId] = { state: 'awaiting_balance_order_quantity', userId: userId };
-            
+
             const maxCanBuy = Math.min(Math.floor(balance / firstPrice), stock.current_stock, stock.links.length, MAX_TOPUP_AMOUNT / firstPrice);
-            
+
             bot.editMessageText(
-                `📩 *BUY GPT VIA INVITE*\n\n` +
-                `💵 Price: Rp ${formatIDR(getGptInvitePrice())} (no bulk)\n` +
-                `📦 Accounts available: ${available}\n\n` +
-                `${statusLine}\n\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+                `💳 *BUY WITH BALANCE*\n\n` +
+                `Your Balance: Rp ${formatIDR(balance)}\n` +
+                `Price: Rp ${formatIDR(firstPrice)}/account\n\n` +
+                `How many links?\n\n` +
+                `Max you can buy: ${maxCanBuy}\n\n` +
+                `💡 Send quantity number:`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
             ).catch(() => {});
         }
 
@@ -5807,33 +5768,25 @@ else if (data.startsWith('claim_gift_')) {
             const balance = getBalance(userId);
             const canClaimNow = canClaim(userId);
             const nextClaimTime = getNextClaimTime(userId);
-            
+
             const keyboard = {
                 inline_keyboard: [
-                    [{ text: '💳 Pay with Balance', callback_data: 'pay_alight_balance' }],
-                    [{ text: '📱 Pay via QRIS', callback_data: 'pay_alight_qris' }],
+                    [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
                     [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
-                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                    [{ text: '💰 Buy with Balance', callback_data: 'buy_with_balance' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
 
-            const statusLine = available === 0
-                ? '❌ Out of stock! Add more Alight Motion first.'
-                : canBuy
-                    ? '✅ Choose payment method below.'
-                    : '⚠️ Not enough balance. Please top up.';
-
             bot.editMessageText(
-                `🎬 *BUY ALIGHT MOTION*\n\n` +
-                `💵 Price: Rp ${formatIDR(getAlightMotionPrice())} (no bulk)\n` +
-                `📦 Accounts available: ${available}\n\n` +
-                `${statusLine}\n\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
+                `💳 *YOUR BALANCE*\n\n` +
+                `Balance: Rp ${formatIDR(balance)}\n\n` +
+                `🎁 Daily claim: ${canClaimNow ? '✅ Available!' : `⏰ Next in ${nextClaimTime}`}\n` +
+                `💵 Top up anytime: 0-100k IDR`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
-        
+
         else if (data === 'check_stock') {
             const stock = getStock();
             const accountStock = getAccountStock();
@@ -5850,22 +5803,13 @@ else if (data.startsWith('claim_gift_')) {
             const pricingText = Object.keys(pricing).map(range =>
                 `• ${range}: Rp ${formatIDR(pricing[range])}`
             ).join('\n');
-            
+
             const keyboard = {
                 inline_keyboard: [
-                    [{ text: '💳 Pay with Balance', callback_data: 'pay_perplexity_balance' }],
-                    [{ text: '📱 Pay via QRIS', callback_data: 'pay_perplexity_qris' }],
-                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
-                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                    [{ text: '🛒 Order Now', callback_data: 'order' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
-
-            const statusLine = available === 0
-                ? '❌ Out of stock! Add more Perplexity links first.'
-                : canBuy
-                    ? '✅ Choose payment method below.'
-                    : '⚠️ Not enough balance. Please top up.';
 
             bot.editMessageText(
                 `📦 *STOCK AVAILABLE*\n\n` +
@@ -6752,7 +6696,7 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
         
-        else if (data === 'confirm_order') {
+        else if (data === 'order' || data === 'confirm_order') {
             const stock = getStock();
             
             if (stock.current_stock === 0 || stock.links.length === 0) {
