@@ -3525,8 +3525,6 @@ else if (data.startsWith('claim_gift_')) {
             }
         }
 
-        else if (data === 'edit_pricing') {
-            if (!isAdmin(userId)) return;
 
         else if (data === 'admin_product_settings') {
             if (!isAdmin(userId)) return;
@@ -3578,136 +3576,6 @@ else if (data.startsWith('claim_gift_')) {
                     `🎬 *EDIT ALIGHT MOTION PRICING*\n\n` +
                     `Send 1x|5pcs|50pcs|Label\n` +
                     `Example: 4000|15000|50000|Alight Motion Accounts\n\n` +
-                    `Leave label blank to keep current text.`,
-                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-                ).catch(() => {});
-            } else {
-                const label = getProductLabel(productKey, 'this product');
-                bot.editMessageText(
-                    `🏷️ *EDIT ${label.toUpperCase()}*\n\n` +
-                    `Send Price|Label (label optional).\n` +
-                    `Example: 700 | ${label}\n\n` +
-                    `Price updates apply to orders immediately.`,
-                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-                ).catch(() => {});
-            }
-        }
-
-        else if (data === 'edit_pricing') {
-            if (!isAdmin(userId)) return;
-
-        else if (data === 'admin_product_settings') {
-            if (!isAdmin(userId)) return;
-
-            const settings = getProductSettings();
-            const summary = [
-                `🔑 ${escapeMarkdown(getProductLabel('account', 'Spotify Accounts'))}: Rp ${formatIDR(getAccountPrice())}`,
-                `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics'))}: Rp ${formatIDR(getGptBasicsPrice())}`,
-                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: Rp ${formatIDR(getGptInvitePrice())}`,
-                `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion'))}: ${formatAlightPriceSummary()}`,
-                `🧠 ${escapeMarkdown(settings.perplexity?.label || 'Perplexity AI')}: ${formatPerplexityPriceSummary()}`
-            ].join('\n');
-
-            const keyboard = {
-                inline_keyboard: [
-                    [{ text: '🔑 Edit Spotify Accounts', callback_data: 'edit_product_account' }],
-                    [{ text: '🤖 Edit GPT Basics', callback_data: 'edit_product_gpt_basic' }],
-                    [{ text: '📩 Edit GPT via Invite', callback_data: 'edit_product_gpt_invite' }],
-                    [{ text: '🎬 Edit Alight Motion', callback_data: 'edit_product_alight_motion' }],
-                    [{ text: '🧠 Edit Perplexity AI', callback_data: 'edit_product_perplexity' }],
-                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
-                ]
-            };
-
-            bot.editMessageText(
-                `🏷️ *PRODUCT LABELS & PRICES*\n\n` +
-                `${summary}\n\n` +
-                `Tap a product to update the price and user-facing button text.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
-        }
-
-        else if (data.startsWith('edit_product_')) {
-            if (!isAdmin(userId)) return;
-
-            const productKey = data.replace('edit_product_', '');
-            userStates[chatId] = { state: 'awaiting_product_setting', productKey };
-
-            if (productKey === 'perplexity') {
-                bot.editMessageText(
-                    `🧠 *EDIT PERPLEXITY PRICING*\n\n` +
-                    `Send Base|Bulk|Threshold|Label\n` +
-                    `Example: 650|500|5|Perplexity AI Links\n\n` +
-                    `Leave label blank to keep current text.`,
-                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-                ).catch(() => {});
-            } else if (productKey === 'alight_motion') {
-                bot.editMessageText(
-                    `🎬 *EDIT ALIGHT MOTION PRICING*\n\n` +
-                    `Send 1x|5pcs|50pcs|Label\n` +
-                    `Example: 4000|15000|50000|Alight Motion Accounts\n\n` +
-                    `Leave label blank to keep current text.`,
-                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-                ).catch(() => {});
-            } else {
-                const label = getProductLabel(productKey, 'this product');
-                bot.editMessageText(
-                    `🏷️ *EDIT ${label.toUpperCase()}*\n\n` +
-                    `Send Price|Label (label optional).\n` +
-                    `Example: 700 | ${label}\n\n` +
-                    `Price updates apply to orders immediately.`,
-                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-                ).catch(() => {});
-            }
-        }
-
-        else if (data === 'edit_pricing') {
-            if (!isAdmin(userId)) return;
-
-            userStates[chatId] = { state: 'awaiting_new_pricing' };
-
-        else if (data === 'admin_product_settings') {
-            if (!isAdmin(userId)) return;
-
-            const settings = getProductSettings();
-            const summary = [
-                `🔑 ${escapeMarkdown(getProductLabel('account', 'Spotify Accounts'))}: Rp ${formatIDR(getAccountPrice())}`,
-                `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics'))}: Rp ${formatIDR(getGptBasicsPrice())}`,
-                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: Rp ${formatIDR(getGptInvitePrice())}`,
-                `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion'))}: Rp ${formatIDR(getAlightMotionPrice())}`,
-                `🧠 ${escapeMarkdown(settings.perplexity?.label || 'Perplexity AI')}: ${formatPerplexityPriceSummary()}`
-            ].join('\n');
-
-            const keyboard = {
-                inline_keyboard: [
-                    [{ text: '🔑 Edit Spotify Accounts', callback_data: 'edit_product_account' }],
-                    [{ text: '🤖 Edit GPT Basics', callback_data: 'edit_product_gpt_basic' }],
-                    [{ text: '📩 Edit GPT via Invite', callback_data: 'edit_product_gpt_invite' }],
-                    [{ text: '🎬 Edit Alight Motion', callback_data: 'edit_product_alight_motion' }],
-                    [{ text: '🧠 Edit Perplexity AI', callback_data: 'edit_product_perplexity' }],
-                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
-                ]
-            };
-
-            bot.editMessageText(
-                `🏷️ *PRODUCT LABELS & PRICES*\n\n` +
-                `${summary}\n\n` +
-                `Tap a product to update the price and user-facing button text.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
-        }
-
-        else if (data.startsWith('edit_product_')) {
-            if (!isAdmin(userId)) return;
-
-            const productKey = data.replace('edit_product_', '');
-            userStates[chatId] = { state: 'awaiting_product_setting', productKey };
-
-            if (productKey === 'perplexity') {
-                bot.editMessageText(
-                    `🧠 *EDIT PERPLEXITY PRICING*\n\n` +
-                    `Send Base|Bulk|Threshold|Label\n` +
-                    `Example: 650|500|5|Perplexity AI Links\n\n` +
                     `Leave label blank to keep current text.`,
                     { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
                 ).catch(() => {});
@@ -4669,7 +4537,7 @@ else if (data.startsWith('claim_gift_')) {
                 `${statusLine}\n\n` +
                 `🔗 Access via https://perplexity.ai\n` +
                 `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} link(s) depending on stock.\n` +
-                `📱 For QRIS please DM ${ADMIN_USERNAME} to get the code.`,
+                `📱 Choose QRIS to receive the GoPay QR automatically, then send payment proof.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -5213,13 +5081,30 @@ else if (data.startsWith('claim_gift_')) {
                 `📱 Status: Awaiting Payment\n` +
                 `⏰ Expires in: ${ORDER_EXPIRY_MINUTES} minutes\n\n`;
 
-            bot.sendMessage(chatId,
-                `📱 *PAYMENT INSTRUCTIONS*\n\n` +
-                `${orderMessage}` +
-                `📸 Please DM ${ADMIN_USERNAME} with your payment proof to confirm.\n` +
-                `⚡ We will deliver after payment is verified.`,
-                { parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
+            const gopay = getQRIS();
+            const paymentCaption =
+                `📱 *PAY WITH QRIS*\n\n` +
+                `📋 Order ID: #${orderId}\n` +
+                `Product: Alight Motion account\n` +
+                `Quantity: ${quantity}\n` +
+                `Total: Rp ${formatIDR(totalPrice)}\n\n` +
+                `📸 Scan the GoPay QR then send screenshot with caption: #${orderId}\n` +
+                `Or DM admin: ${ADMIN_USERNAME}`;
+
+            if (gopay.file_id) {
+                bot.sendPhoto(chatId, gopay.file_id, {
+                    caption: paymentCaption,
+                    parse_mode: 'Markdown',
+                    reply_markup: keyboard
+                }).catch(() => {});
+            } else {
+                bot.sendMessage(chatId, paymentCaption, { parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
+            }
+
+            orderMessage += `📸 Send payment proof photo with caption: #${orderId}\n` +
+                `⚡ We will deliver after payment is verified.`;
+
+            bot.sendMessage(chatId, orderMessage, { parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
 
             const pendingPayment = {
                 order_id: orderId,
@@ -5973,6 +5858,7 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
         
+
         else if (data === 'back_to_main') {
             const balance = getBalance(userId);
             const stock = getStock();
@@ -5980,7 +5866,7 @@ else if (data.startsWith('claim_gift_')) {
             const pricingText = Object.keys(pricing).slice(0, 3).map(range =>
                 `• ${range}: Rp ${formatIDR(pricing[range])}`
             ).join('\n');
-            
+
             const keyboard = {
                 inline_keyboard: [
                     [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
@@ -5995,27 +5881,56 @@ else if (data.startsWith('claim_gift_')) {
                 ]
             };
 
+            const bonuses = getBonuses();
+            const bonusText = bonuses.length > 0 ? `\n\n🎁 *Bonus Deals:*\n${formatBonusDealsList()}` : '';
+
+            bot.editMessageText(
+                `🎉 *Welcome Back!*\n\n` +
+                `Hi ${escapeMarkdown(query.from.first_name)}! 👋\n\n` +
+                `💳 Balance: Rp ${formatIDR(balance)}\n` +
+                `🔑 ${escapeMarkdown(getProductLabel('account', 'Verified Account'))}: Rp ${formatIDR(getAccountPrice())}\n` +
+                `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics'))}: Rp ${formatIDR(getGptBasicsPrice())}\n` +
+                `🧠 ${escapeMarkdown(getPerplexityConfig().label)}: ${formatPerplexityPriceSummary()}\n` +
+                `📦 Stock: ${stock.current_stock} links\n\n` +
+                `💰 Prices:\n${pricingText}${bonusText}`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
         else if (data === 'pay_account_qris') {
             const accountStock = getAccountStock();
             const available = accountStock.accounts?.length || 0;
             const maxQuantity = Math.max(1, Math.min(50, available));
 
-                bot.editMessageText(
-                    `🎉 *Welcome Back!*\n\n` +
-                    `Hi ${escapeMarkdown(query.from.first_name)}! 👋\n\n` +
-                    `💳 Balance: Rp ${formatIDR(balance)}\n` +
-                    `🔑 ${escapeMarkdown(getProductLabel('account', 'Verified Account'))}: Rp ${formatIDR(getAccountPrice())}\n` +
-                    `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics'))}: Rp ${formatIDR(getGptBasicsPrice())}\n` +
-                    `🧠 ${escapeMarkdown(getPerplexityConfig().label)}: ${formatPerplexityPriceSummary()}\n` +
-                    `📦 Stock: ${stock.current_stock} links\n\n` +
-                    `💰 Prices:\n${pricingText}${bonusText}`,
-                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
-                ).catch(() => {});
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No accounts in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_account_quantity',
+                payment_method: 'qris',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `📱 Paying via QRIS\n` +
+                `💵 Price: Rp ${formatIDR(getAccountPrice())} per account\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
         }
-        
         else if (data === 'back_to_admin_main') {
             if (!isAdmin(userId)) return;
-            
+
             const keyboard = {
                 inline_keyboard: [
                     [{ text: '📊 Stats', callback_data: 'admin_stats' }, { text: '📝 Orders', callback_data: 'admin_orders' }],
@@ -6035,13 +5950,8 @@ else if (data.startsWith('claim_gift_')) {
             };
 
             bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `📱 Paying via QRIS\n` +
-                `💵 Price: Rp ${formatIDR(getAccountPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+                `🔐 *ADMIN PANEL*\n\nWelcome back!`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
 
@@ -6746,7 +6656,6 @@ else if (data.startsWith('claim_gift_')) {
             const perplexityStock = getPerplexityStock();
             const perplexityAvailable = perplexityStock.links?.length || 0;
             const pricing = getPricing();
-            const stock = getStock();
             const bonuses = getBonuses();
 
             const keyboard = {
@@ -8042,22 +7951,28 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                     `📱 Status: Awaiting Payment\n` +
                     `⏰ Expires in: ${ORDER_EXPIRY_MINUTES} minutes\n\n`;
 
-                bot.sendMessage(chatId,
-                    `📱 *PAYMENT INSTRUCTIONS*\n\n` +
-                    `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
-                    `For QRIS, DM the admin directly to get the code and confirm.`,
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: `📱 DM Admin ${ADMIN_USERNAME}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }]
-                            ]
-                        }
-                    }
-                ).catch(() => {});
+                const gopay = getQRIS();
+                const paymentCaption =
+                    `📱 *PAY WITH QRIS*\n\n` +
+                    `📋 Order ID: #${orderId}\n` +
+                    `Product: Perplexity AI link\n` +
+                    `Quantity: ${quantity}\n` +
+                    `Total: Rp ${formatIDR(totalPrice)}\n\n` +
+                    `📸 Scan the GoPay QR then send screenshot with caption: #${orderId}\n` +
+                    `Or DM admin: ${ADMIN_USERNAME}`;
 
-                orderMessage += `💡 Send payment proof photo with caption: #${orderId}\n` +
-                    `Or contact ${ADMIN_USERNAME} for payment details/QRIS`;
+                if (gopay.file_id) {
+                    bot.sendPhoto(chatId, gopay.file_id, {
+                        caption: paymentCaption,
+                        parse_mode: 'Markdown',
+                        reply_markup: keyboard
+                    }).catch(() => {});
+                } else {
+                    bot.sendMessage(chatId, paymentCaption, { parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
+                }
+
+                orderMessage += `📸 Send payment proof photo with caption: #${orderId}\n` +
+                    `⚡ We will deliver after payment is verified.`;
 
                 bot.sendMessage(chatId, orderMessage, {
                     parse_mode: 'Markdown',
