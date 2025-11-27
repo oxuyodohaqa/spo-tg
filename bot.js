@@ -297,8 +297,22 @@ function getNextTopupId() {
     return counter.last_topup_id;
 }
 
+function normalizeStock(rawStock = {}) {
+    const links = Array.isArray(rawStock.links) ? rawStock.links : [];
+    let current_stock = Number.isInteger(rawStock.current_stock)
+        ? rawStock.current_stock
+        : links.length;
+
+    if (current_stock < links.length) {
+        current_stock = links.length;
+    }
+
+    return { current_stock, links };
+}
+
 function getStock() {
-    return loadJSON(STOCK_FILE, { current_stock: 0, links: [] });
+    const stock = loadJSON(STOCK_FILE, { current_stock: 0, links: [] });
+    return normalizeStock(stock);
 }
 
 function getAccountStock() {
@@ -309,8 +323,24 @@ function updateAccountStock(accounts = []) {
     saveJSON(ACCOUNTS_FILE, { accounts });
 }
 
+function normalizeAccountStock(rawStock = {}) {
+    if (Array.isArray(rawStock.accounts)) {
+        return { accounts: rawStock.accounts.filter(acc => typeof acc === 'string' && acc.trim().length > 0) };
+    }
+
+    if (typeof rawStock.accounts === 'string') {
+        const accounts = rawStock.accounts
+            .split('\n')
+            .map(acc => acc.trim())
+            .filter(Boolean);
+        return { accounts };
+    }
+
+    return { accounts: [] };
+}
+
 function getGptBasicsStock() {
-    return loadJSON(GPT_BASICS_FILE, { accounts: [] });
+    return normalizeAccountStock(loadJSON(GPT_BASICS_FILE, { accounts: [] }));
 }
 
 function updateGptBasicsStock(accounts = []) {
@@ -318,7 +348,7 @@ function updateGptBasicsStock(accounts = []) {
 }
 
 function getCapcutBasicsStock() {
-    return loadJSON(CAPCUT_BASICS_FILE, { accounts: [] });
+    return normalizeAccountStock(loadJSON(CAPCUT_BASICS_FILE, { accounts: [] }));
 }
 
 function updateCapcutBasicsStock(accounts = []) {
@@ -326,7 +356,7 @@ function updateCapcutBasicsStock(accounts = []) {
 }
 
 function getGptInviteStock() {
-    return loadJSON(GPT_INVITE_FILE, { accounts: [] });
+    return normalizeAccountStock(loadJSON(GPT_INVITE_FILE, { accounts: [] }));
 }
 
 function updateGptInviteStock(accounts = []) {
@@ -2781,6 +2811,7 @@ bot.on('photo', async (msg) => {
         
         const isAccountType = isAccountOrder(order);
         const isGptOrder = isGptBasicsOrder(order);
+        const isCapcut = isCapcutBasicsOrder(order);
         const isGptInvite = isGptInviteOrder(order);
         const isGptGo = isGptGoOrder(order);
         const isGptPlus = isGptPlusOrder(order);
@@ -2792,17 +2823,19 @@ bot.on('photo', async (msg) => {
             ? 'Accounts'
             : isGptOrder
                 ? 'GPT Basics'
-                : isGptInvite
-                    ? 'GPT Invite'
-                    : isGptGo
-                        ? 'GPT Go'
-                        : isGptPlus
-                            ? 'GPT Plus'
-                            : isAlight
-                                ? 'Alight Motion'
-                                : isPerplexity
-                                    ? 'Perplexity'
-                                    : 'Links';
+                : isCapcut
+                    ? 'CapCut Basics'
+                    : isGptInvite
+                        ? 'GPT Invite'
+                        : isGptGo
+                            ? 'GPT Go'
+                            : isGptPlus
+                                ? 'GPT Plus'
+                                : isAlight
+                                    ? 'Alight Motion'
+                                    : isPerplexity
+                                        ? 'Perplexity'
+                                        : 'Links';
 
         updateOrder(orderId, {
             payment_receipt: photo.file_id,
@@ -2839,11 +2872,19 @@ bot.on('photo', async (msg) => {
             ? getAccountPrice()
             : isGptBasicsOrder(order)
                 ? getGptBasicsPrice()
-                : isGptInviteOrder(order)
-                    ? getGptInvitePrice()
-                    : isAlightMotionOrder(order)
-                        ? getAlightUnitPrice(order.quantity)
-                        : getPricePerUnit(order.quantity);
+                : isCapcutBasicsOrder(order)
+                    ? getCapcutBasicsPrice()
+                    : isGptInviteOrder(order)
+                        ? getGptInvitePrice(order.variant || 'nw')
+                        : isGptGoOrder(order)
+                            ? getGptGoPrice()
+                            : isGptPlusOrder(order)
+                                ? getGptPlusPrice(order.variant || 'nw')
+                                : isAlightMotionOrder(order)
+                                    ? getAlightUnitPrice(order.quantity)
+                                    : isPerplexityOrder(order)
+                                        ? getPerplexityUnitPrice(order.quantity)
+                                        : getPricePerUnit(order.quantity);
 
         bot.sendPhoto(ADMIN_TELEGRAM_ID, photo.file_id, {
             caption:
@@ -3287,12 +3328,13 @@ bot.on('callback_query', async (query) => {
             const order = orders.find(o => o.order_id === orderId);
             const isAccountOrder = order?.product === 'account' || order?.type === 'account';
             const isGptOrder = isGptBasicsOrder(order);
+            const isCapcut = isCapcutBasicsOrder(order);
             const isGptInvite = isGptInviteOrder(order);
             const isGptGo = isGptGoOrder(order);
             const isGptPlus = isGptPlusOrder(order);
             const isAlight = isAlightMotionOrder(order);
             const isPerplexity = isPerplexityOrder(order);
-            const isCredential = isAccountOrder || isGptOrder || isGptInvite || isGptGo || isGptPlus || isAlight || isPerplexity;
+            const isCredential = isAccountOrder || isGptOrder || isCapcut || isGptInvite || isGptGo || isGptPlus || isAlight || isPerplexity;
 
             if (!order) {
                 bot.answerCallbackQuery(query.id, {
@@ -3313,17 +3355,19 @@ bot.on('callback_query', async (query) => {
                         ? 'account(s)'
                         : isGptOrder
                             ? 'GPT Basics account(s)'
-                            : isGptInvite
-                                ? 'GPT Business via Invite account(s)'
-                                : isGptGo
-                                    ? 'GPT Go account(s)'
-                                    : isGptPlus
-                                        ? 'GPT Plus account(s)'
-                                        : isAlight
-                                            ? 'Alight Motion account(s)'
-                                            : isPerplexity
-                                                ? 'Perplexity link(s)'
-                                                : 'links'
+                            : isCapcut
+                                ? 'CapCut Basics account(s)'
+                                : isGptInvite
+                                    ? 'GPT Business via Invite account(s)'
+                                    : isGptGo
+                                        ? 'GPT Go account(s)'
+                                        : isGptPlus
+                                            ? 'GPT Plus account(s)'
+                                            : isAlight
+                                                ? 'Alight Motion account(s)'
+                                                : isPerplexity
+                                                    ? 'Perplexity link(s)'
+                                                    : 'links'
                 }${bonusNote}...`,
                 {
                     chat_id: chatId,
@@ -3339,6 +3383,9 @@ bot.on('callback_query', async (query) => {
                 delivered = result.success;
             } else if (isGptOrder) {
                 const result = await deliverGptBasics(order.user_id, orderId, order.quantity);
+                delivered = result.success;
+            } else if (isCapcut) {
+                const result = await deliverCapcutBasics(order.user_id, orderId, order.quantity);
                 delivered = result.success;
             } else if (isGptInvite) {
                 const result = await deliverGptInvite(order.user_id, orderId, order.quantity);
