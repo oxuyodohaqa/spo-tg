@@ -28,6 +28,7 @@ const MIN_TOPUP_AMOUNT = 0;
 const MAX_TOPUP_AMOUNT = 100000;
 const ACCOUNT_PRICE_IDR = 650;
 const GPT_BASICS_PRICE_IDR = 50;
+const CAPCUT_BASICS_PRICE_IDR = 50;
 // GPT via Invite pricing (IDR)
 const GPT_INVITE_FW_PRICE_IDR = 15_000; // Full Warranty
 const GPT_INVITE_NW_PRICE_IDR = 6_000;  // No Warranty
@@ -63,6 +64,7 @@ const ACCOUNTS_FILE = 'accounts.json';
 const CUSTOM_CONTENT_FILE = 'custom_content.json';
 const PRODUCT_SETTINGS_FILE = 'product_settings.json';
 const GPT_BASICS_FILE = 'gpt_basics.json';
+const CAPCUT_BASICS_FILE = 'capcut_basics.json';
 const GPT_INVITE_FILE = 'gpt_invite.json';
 const GPT_GO_FILE = 'gpt_go.json';
 const GPT_PLUS_FILE = 'gpt_plus.json';
@@ -81,6 +83,7 @@ const DEFAULT_PRICING = {
 const DEFAULT_PRODUCT_SETTINGS = {
     account: { price: ACCOUNT_PRICE_IDR, label: 'Spotify Verified Accounts' },
     gpt_basic: { price: GPT_BASICS_PRICE_IDR, label: 'GPT Basics Accounts' },
+    capcut_basic: { price: CAPCUT_BASICS_PRICE_IDR, label: 'CapCut Basics Accounts' },
     gpt_invite: {
         fw_price: GPT_INVITE_FW_PRICE_IDR,
         nw_price: GPT_INVITE_NW_PRICE_IDR,
@@ -225,6 +228,7 @@ function buildAdminMainKeyboard() {
             [{ text: '👥 Users', callback_data: 'admin_users' }, { text: '💰 Revenue', callback_data: 'admin_revenue' }],
             [{ text: '📈 Analytics', callback_data: 'admin_analytics' }, { text: '📦 Stock', callback_data: 'admin_stock' }],
             [{ text: '🔑 Accounts', callback_data: 'admin_accounts' }, { text: '🤖 GPT Basics', callback_data: 'admin_gpt_basics' }],
+            [{ text: '🎞️ CapCut Basics', callback_data: 'admin_capcut_basics' }],
             [{ text: '📩 GPT via Invite', callback_data: 'admin_gpt_invite' }, { text: '🎬 Alight Motion', callback_data: 'admin_alight_motion' }],
             [{ text: '🚀 GPT Go', callback_data: 'admin_gpt_go' }, { text: '✨ GPT Plus', callback_data: 'admin_gpt_plus' }],
             [{ text: '🧠 Perplexity AI', callback_data: 'admin_perplexity' }, { text: '💵 Pricing', callback_data: 'admin_pricing' }],
@@ -311,6 +315,14 @@ function getGptBasicsStock() {
 
 function updateGptBasicsStock(accounts = []) {
     saveJSON(GPT_BASICS_FILE, { accounts });
+}
+
+function getCapcutBasicsStock() {
+    return loadJSON(CAPCUT_BASICS_FILE, { accounts: [] });
+}
+
+function updateCapcutBasicsStock(accounts = []) {
+    saveJSON(CAPCUT_BASICS_FILE, { accounts });
 }
 
 function getGptInviteStock() {
@@ -407,7 +419,7 @@ function updateStock(quantity, links = null) {
     if (links !== null && quantity > previousStock) {
         const stockAdded = quantity - previousStock;
         setTimeout(() => {
-            broadcastRestock(quantity).then(result => {
+            broadcastRestock(stockAdded, quantity).then(result => {
                 if (bot && botReady) {
                     bot.sendMessage(ADMIN_TELEGRAM_ID,
                         `📢 *AUTO-BROADCAST SENT!*\n\n` +
@@ -627,6 +639,12 @@ function getGptBasicsPrice() {
     const settings = getProductSettings();
     const price = parseInt(settings?.gpt_basic?.price);
     return !isNaN(price) && price > 0 ? price : GPT_BASICS_PRICE_IDR;
+}
+
+function getCapcutBasicsPrice() {
+    const settings = getProductSettings();
+    const price = parseInt(settings?.capcut_basic?.price);
+    return !isNaN(price) && price > 0 ? price : CAPCUT_BASICS_PRICE_IDR;
 }
 
 function getGptInvitePrices() {
@@ -867,6 +885,11 @@ function isGptBasicsOrder(order) {
     return order.product === 'gpt_basic' || order.type === 'gpt_basic' || order.product === 'gpt_basics';
 }
 
+function isCapcutBasicsOrder(order) {
+    if (!order) return false;
+    return order.product === 'capcut_basic' || order.type === 'capcut_basic' || order.product === 'capcut_basics';
+}
+
 function isGptInviteOrder(order) {
     if (!order) return false;
     return order.product === 'gpt_invite' || order.type === 'gpt_invite';
@@ -895,6 +918,7 @@ function isPerplexityOrder(order) {
 function isCredentialOrder(order) {
     return isAccountOrder(order)
         || isGptBasicsOrder(order)
+        || isCapcutBasicsOrder(order)
         || isGptInviteOrder(order)
         || isGptGoOrder(order)
         || isGptPlusOrder(order)
@@ -926,6 +950,10 @@ function formatOrderQuantitySummary(order) {
     if (isGptBasicsOrder(order)) {
         const total = getOrderTotalQuantity(order);
         return `${total} GPT Basics account${total > 1 ? 's' : ''}`;
+    }
+    if (isCapcutBasicsOrder(order)) {
+        const total = getOrderTotalQuantity(order);
+        return `${total} CapCut Basics account${total > 1 ? 's' : ''}`;
     }
     if (isGptInviteOrder(order)) {
         const total = getOrderTotalQuantity(order);
@@ -1470,7 +1498,7 @@ async function deliverAccount(userId, orderId = 'N/A') {
             `📋 Order #: ${orderId}\n` +
             `💵 Price: Rp ${formatIDR(getAccountPrice())} (no bulk)\n\n` +
             `🔑 Credentials:\n\`${safeAccount}\`\n\n` +
-            `📥 generator.email acess\n` +
+            `📥 Access inbox via https://generator.email/\n` +
             `📱 Support: ${ADMIN_USERNAME}`;
 
         await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
@@ -1508,7 +1536,7 @@ async function deliverAccounts(userId, orderId, quantity, pricePerAccount = getA
             `🔢 Quantity: ${quantity}\n` +
             `💵 Total: Rp ${formatIDR(totalPrice)} (${formatIDR(pricePerAccount)} each)\n\n` +
             `🔑 Credentials:\n${credentials}\n\n` +
-            `📥 Inbox access included for verification\n` +
+            `📥 Access inbox via https://generator.email/\n` +
             `📱 Support: ${ADMIN_USERNAME}`;
 
         await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
@@ -1555,6 +1583,44 @@ async function deliverGptBasics(userId, orderId, quantity, pricePerAccount = get
     } catch (error) {
         console.error('Error delivering GPT Basics:', error.message);
         return { success: false, message: '❌ Failed to deliver GPT Basics account(s).' };
+    }
+}
+
+async function deliverCapcutBasics(userId, orderId, quantity, pricePerAccount = getCapcutBasicsPrice()) {
+    try {
+        const stock = getCapcutBasicsStock();
+
+        const previousCount = stock.accounts ? stock.accounts.length : 0;
+
+        if (!stock.accounts || stock.accounts.length < quantity) {
+            return { success: false, message: '❌ Not enough CapCut Basics accounts available to deliver!' };
+        }
+
+        const delivered = stock.accounts.splice(0, quantity);
+        updateCapcutBasicsStock(stock.accounts);
+        notifyOutOfStockIfDepleted(previousCount, stock.accounts.length, getProductLabel('capcut_basic', 'CapCut Basics Accounts'));
+
+        const credentials = delivered
+            .map(acc => `• \`${escapeInlineCode(acc)}\``)
+            .join('\n');
+
+        const totalPrice = quantity * pricePerAccount;
+
+        const message =
+            `✅ *CAPCUT BASICS DELIVERED!*\n\n` +
+            `📋 Order #: ${orderId}\n` +
+            `🔢 Quantity: ${quantity}\n` +
+            `💵 Total: Rp ${formatIDR(totalPrice)} (${formatIDR(pricePerAccount)} each)\n\n` +
+            `🔑 Credentials:\n${credentials}\n\n` +
+            `📥 Access via https://generator.email/ or https://temp-mail.io inbox.\n` +
+            `📱 Support: ${ADMIN_USERNAME}`;
+
+        await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
+
+        return { success: true, delivered };
+    } catch (error) {
+        console.error('Error delivering CapCut Basics:', error.message);
+        return { success: false, message: '❌ Failed to deliver CapCut Basics account(s).' };
     }
 }
 
@@ -1783,7 +1849,7 @@ function broadcastAccountRestock(addedCount, totalCount) {
         `🔑 Total Stock: *${totalCount}* ready to claim`,
         '',
         `💵 Price: Rp ${formatIDR(getAccountPrice())} (no bulk)`,
-        '📥 Inbox access included for verification',
+        '📥 Access inbox via https://generator.email/',
         '',
         '⚡ Grab yours now before they sell out!'
     ].join('\n');
@@ -1798,6 +1864,20 @@ function broadcastGptBasicsRestock(addedCount, totalCount) {
         `🔑 Total Stock: *${totalCount}* ready to claim`,
         '',
         `💵 Price: Rp ${formatIDR(getGptBasicsPrice())} (no bulk)`,
+        '⚡ Order now before stock runs out!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastCapcutBasicsRestock(addedCount, totalCount) {
+    const message = [
+        '🎞️ *CAPCUT BASICS RESTOCKED!*',
+        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
+        `🔑 Total Stock: *${totalCount}* ready to claim`,
+        '',
+        `💵 Price: Rp ${formatIDR(getCapcutBasicsPrice())} (no bulk)`,
+        '📥 Access via generator.email or temp-mail.io',
         '⚡ Order now before stock runs out!'
     ].join('\n');
 
@@ -1869,21 +1949,38 @@ function broadcastPerplexityRestock(addedCount, totalCount) {
     return broadcastToAll(message, { parse_mode: 'Markdown' });
 }
 
-function broadcastRestock(quantity) {
+function broadcastRestock(addedCount = 0, newTotal = 0) {
     const pricing = getPricing();
     const pricingText = Object.keys(pricing).slice(0, 4).map(range =>
         `• ${range}: Rp ${formatIDR(pricing[range])}/account`
     ).join('\n');
-    
+
+    const spotifyStock = getStock();
+    const totalLinks = spotifyStock.links?.length ?? spotifyStock.current_stock ?? newTotal ?? 0;
+    const addedText = addedCount > 0 ? `📤 Added: +${addedCount} link${addedCount > 1 ? 's' : ''}\n` : '';
+
+    const productLines = [
+        `🎵 Spotify Links: *${totalLinks}*`,
+        `🔑 ${escapeMarkdown(getProductLabel('account', 'Spotify Verified Accounts'))}: *${(getAccountStock().accounts || []).length}*`,
+        `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics Accounts'))}: *${(getGptBasicsStock().accounts || []).length}*`,
+        `🎞️ ${escapeMarkdown(getProductLabel('capcut_basic', 'CapCut Basics Accounts'))}: *${(getCapcutBasicsStock().accounts || []).length}*`,
+        `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite Accounts'))}: *${(getGptInviteStock().accounts || []).length}*`,
+        `🚀 ${escapeMarkdown(getProductLabel('gpt_go', 'GPT Go Plan Accounts'))}: *${(getGptGoStock().accounts || []).length}*`,
+        `✨ ${escapeMarkdown(getProductLabel('gpt_plus', 'GPT Plus Plan Accounts'))}: *${(getGptPlusStock().accounts || []).length}*`,
+        `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Accounts'))}: *${(getAlightMotionStock().accounts || []).length}*`,
+        `🧠 Perplexity Links: *${(getPerplexityStock().links || []).length}*`
+    ].join('\n');
+
     const coupons = getCoupons();
     const activeCoupons = Object.values(coupons).filter(c => c.active);
-    const couponText = activeCoupons.length > 0 
-        ? `🎟️ Active coupons: ${activeCoupons.map(c => c.code).join(', ')}\n` 
+    const couponText = activeCoupons.length > 0
+        ? `🎟️ Active coupons: ${activeCoupons.map(c => c.code).join(', ')}\n`
         : '';
-    
+
     const message =
         `📦 *STOCK RESTOCKED!*\n\n` +
-        `✅ *${quantity} Spotify PREMIUM STUDENT LINKS* now available!\n\n` +
+        addedText +
+        `📊 *Available Stock:*\n${productLines}\n\n` +
         `💰 *Current Pricing:*\n` +
         `${pricingText}\n\n` +
         `${couponText}` +
@@ -2382,6 +2479,7 @@ bot.onText(/\/start/, (msg) => {
             const stock = getStock();
             const accountStock = getAccountStock();
             const gptStock = getGptBasicsStock();
+            const capcutStock = getCapcutBasicsStock();
             const gptInviteStock = getGptInviteStock();
             const gptGoStock = getGptGoStock();
             const gptPlusStock = getGptPlusStock();
@@ -2400,6 +2498,7 @@ bot.onText(/\/start/, (msg) => {
                 `• Links: ${stock.links.length}\n` +
                 `• Accounts: ${accountStock.accounts?.length || 0}\n` +
                 `• GPT Basics: ${gptStock.accounts?.length || 0}\n` +
+                `• CapCut Basics: ${capcutStock.accounts?.length || 0}\n` +
                 `• GPT via Invite: ${gptInviteStock.accounts?.length || 0}\n` +
                 `• GPT Go: ${gptGoStock.accounts?.length || 0}\n` +
                 `• GPT Plus: ${gptPlusStock.accounts?.length || 0}\n` +
@@ -2417,6 +2516,7 @@ bot.onText(/\/start/, (msg) => {
         const stock = getStock();
         const accountStock = getAccountStock();
         const gptStock = getGptBasicsStock();
+        const capcutStock = getCapcutBasicsStock();
         const gptInviteStock = getGptInviteStock();
         const gptGoStock = getGptGoStock();
         const gptPlusStock = getGptPlusStock();
@@ -2424,6 +2524,7 @@ bot.onText(/\/start/, (msg) => {
         const perplexityStock = getPerplexityStock();
         const accountAvailable = accountStock.accounts?.length || 0;
         const gptAvailable = gptStock.accounts?.length || 0;
+        const capcutAvailable = capcutStock.accounts?.length || 0;
         const gptInviteAvailable = gptInviteStock.accounts?.length || 0;
         const gptGoAvailable = gptGoStock.accounts?.length || 0;
         const gptPlusAvailable = gptPlusStock.accounts?.length || 0;
@@ -2439,6 +2540,7 @@ bot.onText(/\/start/, (msg) => {
             inline_keyboard: [
                 [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                 [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
+                [{ text: `🎞️ ${getProductLabel('capcut_basic', 'CapCut Basics')} (Rp ${formatIDR(getCapcutBasicsPrice())})`, callback_data: 'buy_capcut_basics' }],
                 [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                 [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                 [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
@@ -2455,6 +2557,7 @@ bot.onText(/\/start/, (msg) => {
                 `🎵 Spotify Student PREMIUM\n` +
                 `🔑 ${escapeMarkdown(getProductLabel('account', 'Verified Spotify Account'))}: Rp ${formatIDR(getAccountPrice())}\n` +
                 `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics Account'))}: Rp ${formatIDR(getGptBasicsPrice())}\n` +
+                `🎞️ ${escapeMarkdown(getProductLabel('capcut_basic', 'CapCut Basics Account'))}: Rp ${formatIDR(getCapcutBasicsPrice())}\n` +
                 `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: ${formatGptInvitePriceSummary()}\n` +
                 `🚀 ${escapeMarkdown(getProductLabel('gpt_go', 'GPT Go'))}: ${formatGptGoPriceSummary()}\n` +
                 `✨ ${escapeMarkdown(getProductLabel('gpt_plus', 'GPT Plus'))}: ${formatGptPlusPriceSummary()}\n` +
@@ -2464,6 +2567,7 @@ bot.onText(/\/start/, (msg) => {
                 `📦 Stock: ${linkAvailable} links\n` +
                 `🔑 Accounts in stock: ${accountAvailable}\n` +
                 `🤖 GPT Basics in stock: ${gptAvailable}\n` +
+                `🎞️ CapCut Basics in stock: ${capcutAvailable}\n` +
                 `📩 GPT Business via Invite in stock: ${gptInviteAvailable}\n` +
                 `🚀 GPT Go in stock: ${gptGoAvailable}\n` +
                 `✨ GPT Plus in stock: ${gptPlusAvailable}\n` +
@@ -2777,14 +2881,15 @@ bot.on('document', (msg) => {
         const uploadMode = state?.state;
         const isAccountUpload = uploadMode === 'awaiting_account_upload';
         const isGptUpload = uploadMode === 'awaiting_gpt_upload';
+        const isCapcutUpload = uploadMode === 'awaiting_capcut_upload';
         const isGptInviteUpload = uploadMode === 'awaiting_gpt_invite_upload';
         const isGptGoUpload = uploadMode === 'awaiting_gpt_go_upload';
         const isGptPlusUpload = uploadMode === 'awaiting_gpt_plus_upload';
         const isAlightUpload = uploadMode === 'awaiting_alight_upload';
         const isPerplexityUpload = uploadMode === 'awaiting_perplexity_upload';
-        const isLinkUpload = uploadMode === 'awaiting_stock_upload' || (!uploadMode && !isGptUpload && !isPerplexityUpload && !isGptInviteUpload && !isAlightUpload && !isGptGoUpload && !isGptPlusUpload);
+        const isLinkUpload = uploadMode === 'awaiting_stock_upload' || (!uploadMode && !isGptUpload && !isCapcutUpload && !isPerplexityUpload && !isGptInviteUpload && !isAlightUpload && !isGptGoUpload && !isGptPlusUpload);
 
-        if (!isAccountUpload && !isLinkUpload && !isGptUpload && !isPerplexityUpload && !isGptInviteUpload && !isAlightUpload && !isGptGoUpload && !isGptPlusUpload) return;
+        if (!isAccountUpload && !isLinkUpload && !isGptUpload && !isCapcutUpload && !isPerplexityUpload && !isGptInviteUpload && !isAlightUpload && !isGptGoUpload && !isGptPlusUpload) return;
 
         const document = msg.document;
         
@@ -2793,7 +2898,7 @@ bot.on('document', (msg) => {
             return;
         }
         
-        const uploadingText = (isAccountUpload || isGptUpload || isPerplexityUpload || isGptInviteUpload || isAlightUpload || isGptGoUpload || isGptPlusUpload) ? '⏳ Uploading accounts...' : '⏳ Uploading links...';
+        const uploadingText = (isAccountUpload || isGptUpload || isCapcutUpload || isPerplexityUpload || isGptInviteUpload || isAlightUpload || isGptGoUpload || isGptPlusUpload) ? '⏳ Uploading accounts...' : '⏳ Uploading links...';
 
         bot.sendMessage(chatId, uploadingText).then(statusMsg => {
             bot.getFile(document.file_id).then(file => {
@@ -2806,7 +2911,7 @@ bot.on('document', (msg) => {
                     res.on('end', () => {
                         const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-                        if (isAccountUpload || isGptUpload || isPerplexityUpload || isGptInviteUpload || isAlightUpload || isGptGoUpload || isGptPlusUpload) {
+                        if (isAccountUpload || isGptUpload || isCapcutUpload || isPerplexityUpload || isGptInviteUpload || isAlightUpload || isGptGoUpload || isGptPlusUpload) {
                             if (lines.length === 0) {
                                 bot.editMessageText(
                                     '❌ No valid accounts found! Add one credential per line.',
@@ -2827,6 +2932,27 @@ bot.on('document', (msg) => {
                                     `✅ *GPT BASICS UPLOADED!*\n\n` +
                                     `📤 Added: ${lines.length} accounts\n` +
                                     `🤖 Total GPT Basics: ${merged.length}\n\n` +
+                                    `Thank you!`,
+                                    {
+                                        chat_id: chatId,
+                                        message_id: statusMsg.message_id,
+                                        parse_mode: 'Markdown'
+                                    }
+                                ).catch(() => {});
+
+                                delete userStates[chatId];
+                                return;
+                            } else if (isCapcutUpload) {
+                                const capcutStock = getCapcutBasicsStock();
+                                const merged = [...(capcutStock.accounts || []), ...lines];
+                                updateCapcutBasicsStock(merged);
+
+                                broadcastCapcutBasicsRestock(lines.length, merged.length).catch(() => {});
+
+                                bot.editMessageText(
+                                    `✅ *CAPCUT BASICS UPLOADED!*\n\n` +
+                                    `📤 Added: ${lines.length} accounts\n` +
+                                    `🎞️ Total CapCut Basics: ${merged.length}\n\n` +
                                     `Thank you!`,
                                     {
                                         chat_id: chatId,
@@ -4378,6 +4504,28 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        else if (data === 'admin_capcut_basics') {
+            if (!isAdmin(userId)) return;
+
+            const capcutStock = getCapcutBasicsStock();
+            const available = capcutStock.accounts?.length || 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '📤 Upload CapCut Basics File', callback_data: 'upload_capcut_instruction' }],
+                    [{ text: '📊 Check CapCut Basics Stock', callback_data: 'check_capcut_stock' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🎞️ *CAPCUT BASICS INVENTORY*\n\n` +
+                `📦 Accounts available: ${available}\n\n` +
+                `Use the options below to upload or check stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
         else if (data === 'admin_gpt_invite') {
             if (!isAdmin(userId)) return;
 
@@ -4522,6 +4670,23 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        else if (data === 'upload_capcut_instruction') {
+            if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_capcut_upload' };
+
+            bot.sendMessage(chatId,
+                `📤 *UPLOAD CAPCUT BASICS*\n\n` +
+                `Send a .txt file now with one credential per line.\n\n` +
+                `Example:\n` +
+                `email:password\n` +
+                `user|pass\n\n` +
+                `Keep each CapCut Basics account on its own line.\n` +
+                `💡 Uploads auto-broadcast the restock to users.`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
         else if (data === 'upload_gpt_invite_instruction') {
             if (!isAdmin(userId)) return;
 
@@ -4614,6 +4779,18 @@ else if (data.startsWith('claim_gift_')) {
 
             bot.answerCallbackQuery(query.id, {
                 text: `📦 Accounts available: ${available}`,
+                show_alert: true
+            }).catch(() => {});
+        }
+
+        else if (data === 'check_capcut_stock') {
+            if (!isAdmin(userId)) return;
+
+            const capcutStock = getCapcutBasicsStock();
+            const available = capcutStock.accounts?.length || 0;
+
+            bot.answerCallbackQuery(query.id, {
+                text: `📦 CapCut Basics available: ${available}`,
                 show_alert: true
             }).catch(() => {});
         }
@@ -4879,8 +5056,40 @@ else if (data.startsWith('claim_gift_')) {
                 `💵 Price: Rp ${formatIDR(getAccountPrice())} (no bulk)\n` +
                 `📦 Accounts available: ${available}\n\n` +
                 `${statusLine}\n\n` +
-                `⚡ Delivery includes access (generator.email / blade.biz.id) .\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
+                `📥 Access inbox via https://generator.email/ for verification.\n` +
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))} accounts depending on stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'buy_capcut_basics') {
+            const capcutStock = getCapcutBasicsStock();
+            const available = capcutStock.accounts?.length || 0;
+            const canBuy = available > 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '💳 Pay with Balance', callback_data: 'pay_capcut_balance' }],
+                    [{ text: '📱 Pay via QRIS', callback_data: 'pay_capcut_qris' }],
+                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
+                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
+            };
+
+            const statusLine = available === 0
+                ? '❌ Out of stock! Add more CapCut Basics first.'
+                : canBuy
+                    ? '✅ Choose payment method below.'
+                    : '⚠️ Not enough balance. Please top up.';
+
+            bot.editMessageText(
+                `🎞️ *BUY CAPCUT BASICS*\n\n` +
+                `💵 Price: Rp ${formatIDR(getCapcutBasicsPrice())} (no bulk)\n` +
+                `📦 Accounts available: ${available}\n\n` +
+                `${statusLine}\n\n` +
+                `📥 Access via https://generator.email/ or https://temp-mail.io inbox.\n` +
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))} accounts depending on stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -4912,7 +5121,7 @@ else if (data.startsWith('claim_gift_')) {
                 `📦 Accounts available: ${available}\n\n` +
                 `${statusLine}\n\n` +
                 `🔗 Access via https://generator.email/ inbox.\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))} accounts depending on stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -4943,7 +5152,7 @@ else if (data.startsWith('claim_gift_')) {
                 `💵 Price: Rp ${formatIDR(getGptGoPrice())} (No Warranty)\n` +
                 `📦 Accounts available: ${available}\n\n` +
                 `${statusLine}\n\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))} accounts depending on stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -4973,7 +5182,7 @@ else if (data.startsWith('claim_gift_')) {
                 `💵 Prices: ${formatGptPlusPriceSummary()}\n` +
                 `📦 Accounts available: ${available}\n\n` +
                 `${statusLine}\n\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))} accounts depending on stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -5004,7 +5213,7 @@ else if (data.startsWith('claim_gift_')) {
                 `${statusLine}\n\n` +
                 `🛡️ FW = Full warranty provided.\n` +
                 `⚡ NW = No warranty. Accounts provided instantly.\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))} accounts depending on stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -5044,7 +5253,7 @@ else if (data.startsWith('claim_gift_')) {
                 `💵 Price: Rp ${formatIDR(getGptPlusPrice(variant))} (no bulk)\n` +
                 `📦 Accounts available: ${available}\n\n` +
                 `${statusLine}\n\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))} accounts depending on stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -5085,7 +5294,7 @@ else if (data.startsWith('claim_gift_')) {
                 `💵 Price: Rp ${formatIDR(getGptInvitePrice(variant))} (no bulk)\n` +
                 `📦 Accounts available: ${available}\n\n` +
                 `${statusLine}\n\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} accounts depending on stock.`,
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))} accounts depending on stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -5125,11 +5334,11 @@ else if (data.startsWith('claim_gift_')) {
             }
 
             if (choice === 'custom') {
-                userStates[chatId] = { state: 'choose_alight_custom', max_quantity: Math.max(1, Math.min(50, available)) };
+                userStates[chatId] = { state: 'choose_alight_custom', max_quantity: Math.max(1, Math.min(MAX_ORDER_QUANTITY, available)) };
 
                 bot.editMessageText(
                     `✏️ *CUSTOM ALIGHT MOTION*\n\n` +
-                    `Pick payment method then enter quantity (Max ${Math.max(1, Math.min(50, available))}).`,
+                    `Pick payment method then enter quantity (Max ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))}).`,
                     {
                         chat_id: chatId,
                         message_id: messageId,
@@ -5147,7 +5356,7 @@ else if (data.startsWith('claim_gift_')) {
             }
 
             const quantity = parseInt(choice.replace(/\D/g, ''));
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (!quantity || quantity > maxQuantity) {
                 bot.answerCallbackQuery(query.id, { text: `⚠️ Max available: ${maxQuantity}`, show_alert: true }).catch(() => {});
@@ -5187,7 +5396,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_balance_custom') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, { text: '❌ No Alight Motion in stock!', show_alert: true }).catch(() => {});
@@ -5216,7 +5425,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_qris_custom') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, { text: '❌ No Alight Motion in stock!', show_alert: true }).catch(() => {});
@@ -5269,7 +5478,7 @@ else if (data.startsWith('claim_gift_')) {
                 `📦 Links available: ${available}\n\n` +
                 `${statusLine}\n\n` +
                 `🔗 Access via https://perplexity.ai\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} link(s) depending on stock.\n` +
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))} link(s) depending on stock.\n` +
                 `📱 Choose QRIS to receive the GoPay QR automatically, then send payment proof.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
@@ -5310,11 +5519,11 @@ else if (data.startsWith('claim_gift_')) {
             }
 
             if (choice === 'custom') {
-                userStates[chatId] = { state: 'choose_alight_custom', max_quantity: Math.max(1, Math.min(50, available)) };
+                userStates[chatId] = { state: 'choose_alight_custom', max_quantity: Math.max(1, Math.min(MAX_ORDER_QUANTITY, available)) };
 
                 bot.editMessageText(
                     `✏️ *CUSTOM ALIGHT MOTION*\n\n` +
-                    `Pick payment method then enter quantity (Max ${Math.max(1, Math.min(50, available))}).`,
+                    `Pick payment method then enter quantity (Max ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))}).`,
                     {
                         chat_id: chatId,
                         message_id: messageId,
@@ -5332,7 +5541,7 @@ else if (data.startsWith('claim_gift_')) {
             }
 
             const quantity = parseInt(choice.replace(/\D/g, ''));
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (!quantity || quantity > maxQuantity) {
                 bot.answerCallbackQuery(query.id, { text: `⚠️ Max available: ${maxQuantity}`, show_alert: true }).catch(() => {});
@@ -5372,7 +5581,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_balance_custom') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, { text: '❌ No Alight Motion in stock!', show_alert: true }).catch(() => {});
@@ -5401,7 +5610,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_qris_custom') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, { text: '❌ No Alight Motion in stock!', show_alert: true }).catch(() => {});
@@ -5430,7 +5639,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_balance_custom') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, { text: '❌ No Alight Motion in stock!', show_alert: true }).catch(() => {});
@@ -5459,7 +5668,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_qris_custom') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -5491,7 +5700,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_gpt_invite_balance' || data === 'confirm_buy_gpt_invite') {
             const gptInviteStock = getGptInviteStock();
             const available = gptInviteStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const variant = normalizeGptInviteVariant((userStates[chatId] || {}).selected_variant);
 
             if (available === 0) {
@@ -5525,7 +5734,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_gpt_invite_qris') {
             const gptInviteStock = getGptInviteStock();
             const available = gptInviteStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const variant = normalizeGptInviteVariant((userStates[chatId] || {}).selected_variant);
 
             if (available === 0) {
@@ -5559,7 +5768,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_balance' || data === 'confirm_buy_alight') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const state = userStates[chatId] || {};
             const presetQuantity = state.selected_quantity;
 
@@ -5700,7 +5909,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_qris') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const state = userStates[chatId] || {};
             const presetQuantity = state.selected_quantity;
 
@@ -5838,7 +6047,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_perplexity_balance' || data === 'confirm_buy_perplexity') {
             const perplexityStock = getPerplexityStock();
             const available = perplexityStock.links?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -5870,7 +6079,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_perplexity_qris') {
             const perplexityStock = getPerplexityStock();
             const available = perplexityStock.links?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -5902,7 +6111,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_gpt_invite_balance' || data === 'confirm_buy_gpt_invite') {
             const gptInviteStock = getGptInviteStock();
             const available = gptInviteStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -5934,7 +6143,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_gpt_invite_qris') {
             const gptInviteStock = getGptInviteStock();
             const available = gptInviteStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -5966,7 +6175,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_gpt_plus_balance' || data === 'confirm_buy_gpt_plus') {
             const gptPlusStock = getGptPlusStock();
             const available = gptPlusStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const variant = normalizeGptPlusVariant(userStates[chatId]?.selected_variant);
 
             if (available === 0) {
@@ -6000,7 +6209,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_gpt_plus_qris') {
             const gptPlusStock = getGptPlusStock();
             const available = gptPlusStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const variant = normalizeGptPlusVariant(userStates[chatId]?.selected_variant);
 
             if (available === 0) {
@@ -6034,7 +6243,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_balance' || data === 'confirm_buy_alight') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const state = userStates[chatId] || {};
             const presetQuantity = state.selected_quantity;
 
@@ -6175,7 +6384,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_qris') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const state = userStates[chatId] || {};
             const presetQuantity = state.selected_quantity;
 
@@ -6296,7 +6505,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_perplexity_balance' || data === 'confirm_buy_perplexity') {
             const perplexityStock = getPerplexityStock();
             const available = perplexityStock.links?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -6328,7 +6537,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_perplexity_qris') {
             const perplexityStock = getPerplexityStock();
             const available = perplexityStock.links?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -6384,7 +6593,7 @@ else if (data.startsWith('claim_gift_')) {
                 `📦 Links available: ${available}\n\n` +
                 `${statusLine}\n\n` +
                 `🔗 Access via https://perplexity.ai\n` +
-                `📌 You can buy 1 up to ${Math.max(1, Math.min(50, available))} link(s) depending on stock.\n` +
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))} link(s) depending on stock.\n` +
                 `📱 For QRIS please DM ${ADMIN_USERNAME} to get the code.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
@@ -6393,7 +6602,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_account_balance' || data === 'confirm_buy_account') {
             const accountStock = getAccountStock();
             const available = accountStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -6539,6 +6748,8 @@ else if (data.startsWith('claim_gift_')) {
             const accountAvailable = accountStock.accounts?.length || 0;
             const gptStock = getGptBasicsStock();
             const gptAvailable = gptStock.accounts?.length || 0;
+            const capcutStock = getCapcutBasicsStock();
+            const capcutAvailable = capcutStock.accounts?.length || 0;
             const gptInviteStock = getGptInviteStock();
             const gptInviteAvailable = gptInviteStock.accounts?.length || 0;
             const alightStock = getAlightMotionStock();
@@ -6562,12 +6773,14 @@ else if (data.startsWith('claim_gift_')) {
                 `🎵 Spotify Links: ${stock.links?.length || 0}\n` +
                 `🔑 ${escapeMarkdown(getProductLabel('account', 'Spotify Verified Accounts'))}: ${accountAvailable} (Rp ${formatIDR(getAccountPrice())})\n` +
                 `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics Accounts'))}: ${gptAvailable} (Rp ${formatIDR(getGptBasicsPrice())})\n` +
+                `🎞️ ${escapeMarkdown(getProductLabel('capcut_basic', 'CapCut Basics Accounts'))}: ${capcutAvailable} (Rp ${formatIDR(getCapcutBasicsPrice())})\n` +
                 `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite Accounts'))}: ${gptInviteAvailable} (${formatGptInvitePriceSummary()})\n` +
                 `🧠 Perplexity Links: ${perplexityAvailable} (${formatPerplexityPriceSummary()})\n` +
                 `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Accounts'))}: ${alightAvailable} (${formatAlightPriceSummary()})\n\n` +
                 `💰 Spotify Link Pricing:\n` +
                 `${pricingText}\n` +
                 `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics'))} fixed: Rp ${formatIDR(getGptBasicsPrice())}\n` +
+                `🎞️ ${escapeMarkdown(getProductLabel('capcut_basic', 'CapCut Basics'))} fixed: Rp ${formatIDR(getCapcutBasicsPrice())}\n` +
                 `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))} fixed: ${formatGptInvitePriceSummary()}\n` +
                 `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion'))} packages: ${formatAlightPriceSummary()}\n` +
                 `🧠 Perplexity: ${formatPerplexityPriceSummary()}\n\n` +
@@ -6579,7 +6792,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_account_balance' || data === 'confirm_buy_account') {
             const accountStock = getAccountStock();
             const available = accountStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -6651,7 +6864,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_account_qris') {
             const accountStock = getAccountStock();
             const available = accountStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -6693,7 +6906,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_gpt_balance' || data === 'confirm_buy_gpt') {
             const gptStock = getGptBasicsStock();
             const available = gptStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -6722,10 +6935,42 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        else if (data === 'pay_capcut_balance' || data === 'confirm_buy_capcut') {
+            const capcutStock = getCapcutBasicsStock();
+            const available = capcutStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No CapCut Basics in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_capcut_quantity',
+                payment_method: 'balance',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `💳 Paying with balance\n` +
+                `💵 Price: Rp ${formatIDR(getCapcutBasicsPrice())} per account\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of CapCut Basics accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
         else if (data === 'pay_gpt_qris') {
             const gptStock = getGptBasicsStock();
             const available = gptStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -6754,10 +6999,42 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        else if (data === 'pay_capcut_qris') {
+            const capcutStock = getCapcutBasicsStock();
+            const available = capcutStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No CapCut Basics in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_capcut_quantity',
+                payment_method: 'qris',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `📱 Paying via QRIS\n` +
+                `💵 Price: Rp ${formatIDR(getCapcutBasicsPrice())} per account\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of CapCut Basics accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
         else if (data === 'pay_gpt_go_balance' || data === 'confirm_buy_gpt_go') {
             const gptGoStock = getGptGoStock();
             const available = gptGoStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -6789,7 +7066,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_gpt_go_qris') {
             const gptGoStock = getGptGoStock();
             const available = gptGoStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -6821,7 +7098,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_gpt_invite_balance' || data === 'confirm_buy_gpt_invite') {
             const gptInviteStock = getGptInviteStock();
             const available = gptInviteStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -6853,7 +7130,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_gpt_invite_qris') {
             const gptInviteStock = getGptInviteStock();
             const available = gptInviteStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -6885,7 +7162,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_balance' || data === 'confirm_buy_alight') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const state = userStates[chatId] || {};
             const presetQuantity = state.selected_quantity;
 
@@ -7026,7 +7303,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_qris') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const state = userStates[chatId] || {};
             const presetQuantity = state.selected_quantity;
 
@@ -7147,7 +7424,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_perplexity_balance' || data === 'confirm_buy_perplexity') {
             const perplexityStock = getPerplexityStock();
             const available = perplexityStock.links?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -7179,7 +7456,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_perplexity_qris') {
             const perplexityStock = getPerplexityStock();
             const available = perplexityStock.links?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -7211,7 +7488,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_gpt_invite_balance' || data === 'confirm_buy_gpt_invite') {
             const gptInviteStock = getGptInviteStock();
             const available = gptInviteStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -7243,7 +7520,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_gpt_invite_qris') {
             const gptInviteStock = getGptInviteStock();
             const available = gptInviteStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -7275,7 +7552,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_balance' || data === 'confirm_buy_alight') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -7306,7 +7583,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_alight_qris') {
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -7338,7 +7615,7 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_perplexity_balance' || data === 'confirm_buy_perplexity') {
             const perplexityStock = getPerplexityStock();
             const available = perplexityStock.links?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(50, available));
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -8585,7 +8862,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const paymentMethod = state.payment_method || 'balance';
             const perplexityStock = getPerplexityStock();
             const available = perplexityStock.links?.length || 0;
-            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const selectedQuantity = Math.min(quantity || 0, maxQuantity);
 
             if (isNaN(quantity) || quantity < 1) {
@@ -8797,7 +9074,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const paymentMethod = state.payment_method || 'balance';
             const perplexityStock = getPerplexityStock();
             const available = perplexityStock.links?.length || 0;
-            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const selectedQuantity = Math.min(quantity || 0, maxQuantity);
 
             if (isNaN(quantity) || quantity < 1) {
@@ -9003,7 +9280,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const paymentMethod = state.payment_method || 'balance';
             const perplexityStock = getPerplexityStock();
             const available = perplexityStock.links?.length || 0;
-            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const selectedQuantity = Math.min(quantity || 0, maxQuantity);
 
             if (isNaN(quantity) || quantity < 1) {
@@ -9209,7 +9486,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const paymentMethod = state.payment_method || 'balance';
             const perplexityStock = getPerplexityStock();
             const available = perplexityStock.links?.length || 0;
-            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const selectedQuantity = Math.min(quantity || 0, maxQuantity);
 
             if (isNaN(quantity) || quantity < 1) {
@@ -9415,7 +9692,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const paymentMethod = state.payment_method || 'balance';
             const perplexityStock = getPerplexityStock();
             const available = perplexityStock.links?.length || 0;
-            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const selectedQuantity = Math.min(quantity || 0, maxQuantity);
 
             if (isNaN(quantity) || quantity < 1) {
@@ -9621,7 +9898,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const paymentMethod = state.payment_method || 'balance';
             const perplexityStock = getPerplexityStock();
             const available = perplexityStock.links?.length || 0;
-            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const selectedQuantity = Math.min(quantity || 0, maxQuantity);
 
             if (isNaN(quantity) || quantity < 1) {
@@ -10226,7 +10503,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const paymentMethod = state.payment_method || 'balance';
             const accountStock = getAccountStock();
             const available = accountStock.accounts?.length || 0;
-            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const selectedQuantity = Math.min(quantity || 0, maxQuantity);
 
             if (isNaN(quantity) || quantity < 1) {
@@ -10450,7 +10727,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const paymentMethod = state.payment_method || 'balance';
             const gptStock = getGptBasicsStock();
             const available = gptStock.accounts?.length || 0;
-            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const selectedQuantity = Math.min(quantity || 0, maxQuantity);
 
             if (isNaN(quantity) || quantity < 1) {
@@ -10669,12 +10946,236 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             delete userStates[chatId];
         }
 
+        else if (state.state === 'awaiting_capcut_quantity') {
+            const quantity = parseInt(text.replace(/\D/g, ''));
+            const paymentMethod = state.payment_method || 'balance';
+            const capcutStock = getCapcutBasicsStock();
+            const available = capcutStock.accounts?.length || 0;
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+            const selectedQuantity = Math.min(quantity || 0, maxQuantity);
+
+            if (isNaN(quantity) || quantity < 1) {
+                bot.sendMessage(chatId, '❌ Please send a valid number!').catch(() => {});
+                return;
+            }
+
+            if (selectedQuantity !== quantity) {
+                bot.sendMessage(chatId, `⚠️ Maximum you can order now is ${maxQuantity} account(s).`).catch(() => {});
+                return;
+            }
+
+            if (quantity > available) {
+                bot.sendMessage(chatId, `❌ Only ${available} CapCut Basics account(s) available right now!`).catch(() => {});
+                return;
+            }
+
+            const capcutPrice = getCapcutBasicsPrice();
+            const totalPrice = quantity * capcutPrice;
+            const users = getUsers();
+
+            if (paymentMethod === 'balance') {
+                const balance = getBalance(userId);
+
+                if (balance < totalPrice) {
+                    const shortfall = totalPrice - balance;
+
+                    const keyboard = {
+                        inline_keyboard: [
+                            [{ text: '💵 Top Up via QRIS', callback_data: 'topup_balance' }],
+                            [{ text: '🔙 Back', callback_data: 'buy_capcut_basics' }]
+                        ]
+                    };
+
+                    bot.sendMessage(chatId,
+                        `⚠️ Balance not enough.\n\n` +
+                        `Requested: ${quantity} CapCut Basics account(s)\n` +
+                        `Total needed: Rp ${formatIDR(totalPrice)}\n` +
+                        `Current balance: Rp ${formatIDR(balance)}\n` +
+                        `Shortfall: Rp ${formatIDR(shortfall)}\n\n` +
+                        `Top up with QRIS then try again.`,
+                        { parse_mode: 'Markdown', reply_markup: keyboard }
+                    ).catch(() => {});
+                    return;
+                }
+
+                updateBalance(userId, -totalPrice);
+
+                const orderId = getNextOrderId();
+                const order = {
+                    order_id: orderId,
+                    user_id: userId,
+                    username: users[userId]?.username || msg.from.username || 'unknown',
+                    quantity: quantity,
+                    total_quantity: quantity,
+                    original_price: capcutPrice,
+                    total_price: totalPrice,
+                    status: 'completed',
+                    payment_method: 'balance',
+                    date: new Date().toISOString(),
+                    completed_at: new Date().toISOString(),
+                    product: 'capcut_basic'
+                };
+
+                addOrder(order);
+
+                if (!users[userId]) {
+                    addUser(userId, msg.from);
+                }
+
+                const updatedUsers = getUsers();
+                updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+                updatedUsers[userId].completed_orders = (updatedUsers[userId].completed_orders || 0) + 1;
+                saveJSON(USERS_FILE, updatedUsers);
+
+                const delivery = await deliverCapcutBasics(userId, orderId, quantity);
+                const newBalance = getBalance(userId);
+
+                if (delivery.success) {
+                    bot.sendMessage(
+                        chatId,
+                        `✅ *CAPCUT BASICS PURCHASED!*\n\n` +
+                        `📋 Order: #${orderId}\n` +
+                        `🔢 Quantity: ${quantity}\n` +
+                        `💵 Paid: Rp ${formatIDR(totalPrice)}\n` +
+                        `💳 Balance left: Rp ${formatIDR(newBalance)}\n\n` +
+                        `🔑 Credentials sent above.`,
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
+                                ]
+                            }
+                        }
+                    ).catch(() => {});
+
+                    bot.sendMessage(ADMIN_TELEGRAM_ID,
+                        `🆕 *CAPCUT BASICS SALE*\n\n` +
+                        `User: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')} (${userId})\n` +
+                        `Order: #${orderId}\n` +
+                        `Qty: ${quantity}\n` +
+                        `Total: Rp ${formatIDR(totalPrice)}\n` +
+                        `Remaining CapCut Basics: ${(getCapcutBasicsStock().accounts || []).length}`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(() => {});
+                } else {
+                    updateBalance(userId, totalPrice);
+                    updateOrder(orderId, { status: 'failed' });
+
+                    bot.sendMessage(
+                        chatId,
+                        `❌ *DELIVERY FAILED*\n\n` +
+                        `Order: #${orderId}\n` +
+                        `Your payment has been refunded.\n\n` +
+                        `Please contact ${ADMIN_USERNAME} for help.`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(() => {});
+                }
+            } else {
+                const orderId = getNextOrderId();
+                const order = {
+                    order_id: orderId,
+                    user_id: userId,
+                    username: users[userId]?.username || state.user?.username || msg.from.username || 'unknown',
+                    quantity: quantity,
+                    total_quantity: quantity,
+                    original_price: capcutPrice,
+                    total_price: totalPrice,
+                    status: 'awaiting_payment',
+                    payment_method: 'qris',
+                    date: new Date().toISOString(),
+                    product: 'capcut_basic'
+                };
+
+                addOrder(order);
+
+                if (!users[userId]) {
+                    addUser(userId, state.user || msg.from);
+                }
+
+                const updatedUsers = getUsers();
+                updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+                saveJSON(USERS_FILE, updatedUsers);
+
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                        [{ text: '📝 My Orders', callback_data: 'my_orders' }],
+                        [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                    ]
+                };
+
+                let orderMessage = `✅ *CAPCUT BASICS ORDER CREATED!*\n\n` +
+                    `📋 Order ID: *#${orderId}*\n` +
+                    `🔢 Quantity: ${quantity} account(s)\n` +
+                    `💵 Price per account: Rp ${formatIDR(capcutPrice)}\n` +
+                    `💰 Total: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                    `📱 Status: Awaiting Payment\n` +
+                    `⏰ Expires in: ${ORDER_EXPIRY_MINUTES} minutes\n\n`;
+
+                const gopay = getQRIS();
+                if (gopay.file_id) {
+                    bot.sendPhoto(chatId, gopay.file_id, {
+                        caption:
+                            `📱 *PAYMENT METHOD - GOPAY/QRIS*\n\n` +
+                            `Scan this QR code to pay\n` +
+                            `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                            `After payment, send screenshot with:\n` +
+                            `Caption: #${orderId}\n\n` +
+                            `⏰ Order expires in ${ORDER_EXPIRY_MINUTES} minutes`,
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '📱 DM Admin @itsmeaab', url: 'https://t.me/itsmeaab' }]
+                            ]
+                        }
+                    }).catch(() => {});
+                } else {
+                    bot.sendMessage(chatId,
+                        `📱 *PAYMENT INSTRUCTIONS*\n\n` +
+                        `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                        `Contact admin for payment details:`,
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '📱 DM Admin @itsmeaab', url: 'https://t.me/itsmeaab' }]
+                                ]
+                            }
+                        }
+                    ).catch(() => {});
+                }
+
+                orderMessage += `💡 Send payment proof photo with caption: #${orderId}\n` +
+                    `Or contact ${ADMIN_USERNAME} for payment details`;
+
+                bot.sendMessage(chatId, orderMessage, {
+                    parse_mode: 'Markdown',
+                    reply_markup: keyboard
+                }).catch(() => {});
+
+                bot.sendMessage(ADMIN_TELEGRAM_ID,
+                    `📝 *NEW CAPCUT BASICS ORDER*\n\n` +
+                    `Order ID: #${orderId}\n` +
+                    `Customer: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')}\n` +
+                    `User ID: ${userId}\n` +
+                    `Quantity: ${quantity} account(s)\n` +
+                    `💰 Total: Rp ${formatIDR(totalPrice)}\n` +
+                    `Status: Awaiting Payment\n\n` +
+                    `💡 Waiting for payment proof...`,
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+            }
+
+            delete userStates[chatId];
+        }
+
         else if (state.state === 'awaiting_gpt_go_quantity') {
             const quantity = parseInt(text.replace(/\D/g, ''));
             const paymentMethod = state.payment_method || 'balance';
             const gptGoStock = getGptGoStock();
             const available = gptGoStock.accounts?.length || 0;
-            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const selectedQuantity = Math.min(quantity || 0, maxQuantity);
 
             if (isNaN(quantity) || quantity < 1) {
@@ -10881,7 +11382,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const variant = normalizeGptInviteVariant(state.variant);
             const gptInviteStock = getGptInviteStock();
             const available = gptInviteStock.accounts?.length || 0;
-            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const selectedQuantity = Math.min(quantity || 0, maxQuantity);
 
             if (isNaN(quantity) || quantity < 1) {
@@ -11058,7 +11559,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const variant = normalizeGptPlusVariant(state.variant);
             const gptPlusStock = getGptPlusStock();
             const available = gptPlusStock.accounts?.length || 0;
-            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const selectedQuantity = Math.min(quantity || 0, maxQuantity);
 
             if (isNaN(quantity) || quantity < 1) {
@@ -11234,7 +11735,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
             const paymentMethod = state.payment_method || 'balance';
             const alightStock = getAlightMotionStock();
             const available = alightStock.accounts?.length || 0;
-            const maxQuantity = state.max_quantity || Math.max(1, Math.min(50, available));
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const selectedQuantity = Math.min(quantity || 0, maxQuantity);
 
             if (isNaN(quantity) || quantity < 1) {
