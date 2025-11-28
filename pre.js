@@ -1,3 +1,4 @@
+
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -7,13 +8,21 @@ const { wrapper } = require('axios-cookiejar-support');
 const chalk = require('chalk');
 const readline = require('readline');
 
+// DEFAULT SHEERID OVERRIDES
+// (Set to provided SheerID verification so runs start with the supplied IDs)
+const DEFAULT_PROGRAM_OVERRIDE = {
+    programId: '67c8c14f5f17a83b745e3f82',
+    verificationId: '6928774136cf1a52cc59895a',
+    baseOrigin: 'https://services.sheerid.com'
+};
+
 // CONFIGURATION
 const CONFIG = {
     studentsFile: 'students.txt',
     receiptsDir: 'receipts',
     outputFile: 'sukses.txt',
-    maxConcurrent: 200,
-    batchSize: 200,
+    maxConcurrent: 300,
+    batchSize: 300,
     timeout: 300000,
     uploadTimeout: 90000,
     uploadRetries: 3,
@@ -26,9 +35,12 @@ const CONFIG = {
     countryConfig: null,
     targetLinks: 0,
     targetReached: false,
-    
+
     autoDeleteProcessed: true,
-    retryAllFilesOnFailure: true
+    retryAllFilesOnFailure: true,
+
+    // Force a specific locale across all countries (set to null to keep defaults)
+    forcedLocale: 'en-us'
 };
 
 // COUNTRY CONFIGURATIONS - ALL 24 COUNTRIES WITH SSO ENDPOINTS
@@ -496,6 +508,120 @@ function askQuestion(query) {
     });
 }
 
+// PROGRAM ID OVERRIDE HELPERS
+function parseProgramInput(input) {
+    if (!input || !input.trim()) return null;
+
+    const trimmed = input.trim();
+
+    // Allow providing a text file that contains the program/verification info
+    if (fs.existsSync(trimmed) && fs.statSync(trimmed).isFile()) {
+        try {
+            const fileContent = fs.readFileSync(trimmed, 'utf8');
+            const firstLine = fileContent
+                .split(/\r?\n/)
+                .map(line => line.trim())
+                .find(line => line.length > 0);
+
+            if (firstLine) {
+                return parseProgramInput(firstLine);
+            }
+        } catch (err) {
+            console.warn(`⚠️  Could not read program override file ${trimmed}:`, err.message);
+        }
+    }
+
+    try {
+        const url = new URL(trimmed);
+        const parts = url.pathname.split('/').filter(Boolean);
+        const verifyIndex = parts.indexOf('verify');
+        const programIdFromPath = verifyIndex !== -1 && parts[verifyIndex + 1] ? parts[verifyIndex + 1] : null;
+        const verificationIdFromQuery = url.searchParams.get('verificationId');
+
+        if (programIdFromPath || verificationIdFromQuery) {
+            const params = new URLSearchParams(url.searchParams);
+            let finalLinkFormat = null;
+
+            if (verificationIdFromQuery) {
+                params.set('verificationId', '{verificationId}');
+                finalLinkFormat = `${url.origin}${url.pathname}?${params.toString()}`;
+            }
+
+            return {
+                programId: programIdFromPath || null,
+                verificationId: verificationIdFromQuery || null,
+                baseOrigin: url.origin,
+                finalLinkFormat
+            };
+        }
+    } catch (err) {
+        // Not a URL, fallback to raw program or verification ID
+    }
+
+    // Allow simple "programId,verificationId" or "programId verificationId" input
+    const parts = trimmed.split(/[,\s]+/).filter(Boolean);
+    if (parts.length === 2) {
+        return { programId: parts[0], verificationId: parts[1] };
+    }
+
+    // Handle SheerID TUITION-style verification tokens (e.g., TUITION_46638782_4379044)
+    if (trimmed.startsWith('TUITION_')) {
+        return { verificationId: trimmed };
+    }
+
+    // Handle SheerID SCHEDULE-style verification tokens (e.g., SCHEDULE_46638782_4379044)
+    if (trimmed.startsWith('SCHEDULE_')) {
+        return { verificationId: trimmed };
+    }
+
+    return { programId: trimmed };
+}
+
+function applyProgramOverride(countryConfig, override) {
+    const baseOrigin = override?.baseOrigin || new URL(countryConfig.sheeridUrl).origin;
+    const programId = override?.programId || countryConfig.programId;
+    const locale = CONFIG.forcedLocale || countryConfig.locale;
+    const finalLinkFormat = override?.finalLinkFormat
+        || `${baseOrigin}/verify/${programId}/?verificationId={verificationId}`;
+
+    return {
+        ...countryConfig,
+        programId,
+        locale,
+        verificationId: override?.verificationId || countryConfig.verificationId || null,
+        sheeridUrl: `${baseOrigin}/verify/${programId}/?country=${countryConfig.code}&locale=${locale}`,
+        submitEndpoint: `${baseOrigin}/rest/v2/verification/program/${programId}/step/collectStudentPersonalInfo`,
+        uploadEndpoint: `${baseOrigin}/rest/v2/verification/{verificationId}/step/docUpload`,
+        statusEndpoint: `${baseOrigin}/rest/v2/verification/{verificationId}`,
+        redirectEndpoint: `${baseOrigin}/rest/v2/verification/{verificationId}/redirect`,
+        ssoStartEndpoint: `${baseOrigin}/rest/v2/verification/{verificationId}/step/sso`,
+        ssoCancelEndpoint: `${baseOrigin}/rest/v2/verification/{verificationId}/step/sso`,
+        finalLinkFormat
+    };
+}
+
+async function askCustomProgram(countryConfig) {
+    const defaultOrigin = new URL(countryConfig.sheeridUrl).origin;
+    const prompt = `\n🔗 Enter a custom SheerID verification link or program ID for ${countryConfig.name}\n` +
+        `   Press Enter to keep default (${countryConfig.programId} @ ${defaultOrigin}): `;
+
+    const answer = await askQuestion(chalk.blue(prompt));
+    const override = parseProgramInput(answer);
+
+    if (!override) return null;
+
+    const resolvedProgramId = override.programId || countryConfig.programId;
+    console.log(chalk.green(`\n✅ Using program ID: ${resolvedProgramId}`));
+    if (override.baseOrigin) {
+        console.log(chalk.green(`✅ Using custom SheerID host: ${override.baseOrigin}`));
+    }
+    if (override.verificationId) {
+        console.log(chalk.green(`✅ Using provided verification ID: ${override.verificationId}`));
+    }
+
+    return override;
+}
+
 // COUNTRY SELECTOR
 async function selectCountry() {
     console.log(chalk.cyan('\n🌍 SELECT COUNTRY FOR SPOTIFY VERIFICATION:'));
@@ -960,7 +1086,7 @@ class VerificationSession {
         this.countryConfig = countryConfig;
         this.cookieJar = new tough.CookieJar();
         this.userAgent = this.getRandomUserAgent();
-        this.verificationId = null;
+        this.verificationId = countryConfig.verificationId || null;
         this.client = this.createClient();
         this.setUserAgent(this.userAgent);
         this.requestCount = 0;
@@ -1066,12 +1192,12 @@ class VerificationSession {
             
             this.requestCount++;
             
-            if (response.data?.verificationId) {
+            if (!this.verificationId && response.data?.verificationId) {
                 this.verificationId = response.data.verificationId;
                 this.currentStep = response.data.currentStep || 'collectStudentPersonalInfo';
             } else {
-                this.verificationId = this.generateVerificationId();
-                this.currentStep = 'collectStudentPersonalInfo';
+                this.verificationId = this.verificationId || this.generateVerificationId();
+                this.currentStep = response.data?.currentStep || 'collectStudentPersonalInfo';
             }
             
             console.log(`[${this.id}] 🔑 [${this.countryConfig.flag}] Verification ID: ${this.verificationId}`);
@@ -1159,7 +1285,9 @@ class VerificationSession {
                     return 'error';
                 }
                 
-                if (this.currentStep === 'collectStudentPersonalInfo' && i >= 4) {
+                const shouldMarkInvalid = !this.countryConfig.verificationId && this.submittedCollegeId;
+
+                if (this.currentStep === 'collectStudentPersonalInfo' && i >= 4 && shouldMarkInvalid) {
                     console.log(`[${this.id}] ❌ [${this.countryConfig.flag}] STUCK at collectStudentPersonalInfo - INVALID COLLEGE ID ${this.submittedCollegeId}`);
                     if (collegeMatcher && this.submittedCollegeId) {
                         collegeMatcher.markCollegeAsInvalid(this.submittedCollegeId);
@@ -1175,10 +1303,11 @@ class VerificationSession {
         
         console.log(`[${this.id}] ⏰ [${this.countryConfig.flag}] TIMEOUT reached - Final step: ${this.currentStep}`);
         
-        if (collegeMatcher && this.submittedCollegeId) {
+        if (!this.countryConfig.verificationId && collegeMatcher && this.submittedCollegeId) {
             collegeMatcher.markCollegeAsInvalid(this.submittedCollegeId);
         }
-        return 'invalid_college';
+
+        return this.currentStep || 'invalid_college';
     }
     
     // ✅ NEW: Cancel SSO Process
@@ -1505,16 +1634,16 @@ function loadStudents(countryConfig) {
             console.log(chalk.red(`❌ ${CONFIG.studentsFile} not found`));
             return [];
         }
-
+        
         const content = fs.readFileSync(CONFIG.studentsFile, 'utf-8');
         const students = content.split('\n')
             .filter(line => line.trim())
             .map(line => {
                 const parts = line.split('|').map(s => s.trim());
                 if (parts.length < 2) return null;
-
+                
                 const [name, studentId] = parts;
-
+                
                 let firstName, lastName;
                 if (name.includes(',')) {
                     [lastName, firstName] = name.split(',').map(s => s.trim());
@@ -1523,27 +1652,16 @@ function loadStudents(countryConfig) {
                     firstName = nameParts[0] || 'FIRST';
                     lastName = nameParts.slice(1).join(' ') || 'LAST';
                 }
-
-                const extendedData = parts.length >= 9 ? {
-                    collegeId: parts[2],
-                    collegeName: parts[3],
-                    countryCode: parts[4],
-                    academicTerm: parts[5],
-                    dateIssued: parts[6],
-                    firstDay: parts[7],
-                    lastDay: parts[8]
-                } : {};
-
+                
                 return {
                     firstName: firstName.toUpperCase(),
                     lastName: lastName.toUpperCase(),
                     email: generateEmail(firstName, lastName, countryConfig),
-                    studentId: studentId.trim(),
-                    ...extendedData
+                    studentId: studentId.trim()
                 };
             })
             .filter(s => s);
-
+            
         console.log(chalk.green(`👥 Loaded ${students.length} students`));
         return students;
     } catch (error) {
@@ -1552,28 +1670,7 @@ function loadStudents(countryConfig) {
     }
 }
 
-function getFilePriority(file, student) {
-    const name = file.name.toLowerCase();
-    const isPdf = name.endsWith('.pdf');
-    const hasCollege = student.collegeId ? name.includes(String(student.collegeId).toLowerCase()) : false;
-    const isTuition = name.includes('tuition');
-    const isSchedule = name.includes('schedule');
-
-    // Higher score = higher priority
-    let score = 0;
-    if (isPdf) score += 100;
-    if (hasCollege) score += 50;
-    if (isTuition) score += 10;
-    if (isSchedule) score += 5;
-
-    // Larger files within same tier tend to be more complete
-    score += Math.min(Math.floor(file.size / 1024), 20);
-
-    return score;
-}
-
-function findStudentFiles(student) {
-    const studentId = student.studentId;
+function findStudentFiles(studentId) {
     const dirs = [CONFIG.receiptsDir, 'images', 'documents'];
     const extensions = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
     const files = [];
@@ -1584,12 +1681,8 @@ function findStudentFiles(student) {
         try {
             const dirFiles = fs.readdirSync(dir);
             for (const file of dirFiles) {
-                const lowered = file.toLowerCase();
-                const matchesStudent = lowered.includes(studentId.toLowerCase());
-                const matchesCollege = student.collegeId ? lowered.includes(String(student.collegeId).toLowerCase()) : true;
-
-                if (matchesStudent && matchesCollege &&
-                    extensions.some(ext => lowered.endsWith(ext))) {
+                if (file.toLowerCase().includes(studentId.toLowerCase()) &&
+                    extensions.some(ext => file.toLowerCase().endsWith(ext))) {
                     const filePath = path.join(dir, file);
                     if (fs.existsSync(filePath)) {
                         const stats = fs.statSync(filePath);
@@ -1606,10 +1699,7 @@ function findStudentFiles(student) {
         } catch (e) { continue; }
     }
     
-    return files
-        .map(file => ({ ...file, priority: getFilePriority(file, student) }))
-        .sort((a, b) => b.priority - a.priority)
-        .map(({ priority, ...file }) => file);
+    return files.sort((a, b) => b.size - a.size);
 }
 
 function saveSpotifyUrl(student, url, verificationId, countryConfig, uploadStats = null, ssoForced = false, ssoCancelled = false) {
@@ -1682,36 +1772,44 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
             return null;
         }
         
-        // STEP 3: Submit personal info with exact college match
-        const dob = generateDOB();
-        const step = await session.submitPersonalInfo(student, dob, college);
-        
-        if (step === 'success') {
-            console.log(`[${sessionId}] 🎉 [${countryConfig.flag}] Instant success!`);
-            const spotifyUrl = await session.getSpotifyUrl();
-            
-            if (spotifyUrl) {
-                const result = { student, url: spotifyUrl, type: 'instant_exact', college: college.name };
-                saveSpotifyUrl(student, spotifyUrl, session.verificationId, countryConfig, session.getUploadStats());
-                deleteManager.markStudentSuccess(student.studentId);
-                collegeMatcher.addSuccess();
-                statsTracker.recordSuccess(result);
-                statsTracker.recordCollegeAttempt(college.id, college.name, true);
-                return result;
+        let stepResult;
+
+        if (session.verificationId) {
+            console.log(`[${sessionId}] 🔗 [${countryConfig.flag}] Existing verification detected - skipping form submission`);
+            session.submittedCollegeId = college.id;
+            stepResult = await session.waitForCorrectStep(6, collegeMatcher, statsTracker);
+        } else {
+            // STEP 3: Submit personal info with exact college match
+            const dob = generateDOB();
+            const step = await session.submitPersonalInfo(student, dob, college);
+
+            if (step === 'success') {
+                console.log(`[${sessionId}] 🎉 [${countryConfig.flag}] Instant success!`);
+                const spotifyUrl = await session.getSpotifyUrl();
+
+                if (spotifyUrl) {
+                    const result = { student, url: spotifyUrl, type: 'instant_exact', college: college.name };
+                    saveSpotifyUrl(student, spotifyUrl, session.verificationId, countryConfig, session.getUploadStats());
+                    deleteManager.markStudentSuccess(student.studentId);
+                    collegeMatcher.addSuccess();
+                    statsTracker.recordSuccess(result);
+                    statsTracker.recordCollegeAttempt(college.id, college.name, true);
+                    return result;
+                }
             }
+
+            if (step === 'error') {
+                console.log(`[${sessionId}] ❌ [${countryConfig.flag}] Form submission failed`);
+                deleteManager.markStudentFailed(student.studentId);
+                collegeMatcher.addFailure();
+                statsTracker.recordFailureReason('formFailed');
+                statsTracker.recordCollegeAttempt(college.id, college.name, false);
+                return null;
+            }
+
+            // STEP 4: Wait for step progression with SSO handling
+            stepResult = await session.waitForCorrectStep(6, collegeMatcher, statsTracker);
         }
-        
-        if (step === 'error') {
-            console.log(`[${sessionId}] ❌ [${countryConfig.flag}] Form submission failed`);
-            deleteManager.markStudentFailed(student.studentId);
-            collegeMatcher.addFailure();
-            statsTracker.recordFailureReason('formFailed');
-            statsTracker.recordCollegeAttempt(college.id, college.name, false);
-            return null;
-        }
-        
-        // STEP 4: Wait for step progression with SSO handling
-        const stepResult = await session.waitForCorrectStep(6, collegeMatcher, statsTracker);
         
         if (stepResult === 'success') {
             console.log(`[${sessionId}] 🎉 [${countryConfig.flag}] Already success!`);
@@ -1757,7 +1855,7 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
         }
 
         // STEP 5: Find all student files
-        const files = findStudentFiles(student);
+        const files = findStudentFiles(student.studentId);
         if (files.length === 0) {
             console.log(`[${sessionId}] ❌ [${countryConfig.flag}] No files found for upload`);
             deleteManager.markStudentFailed(student.studentId);
@@ -2097,19 +2195,32 @@ function displayDetailedAnalysis(analysis, countryConfig, matcherStats) {
 async function main() {
     console.clear();
     console.log(chalk.cyan('🎵 Spotify SheerID - MULTI-COUNTRY MODE (24 COUNTRIES)'));
-    console.log(chalk.green('🌍 All countries use the same program ID: 63fd266996552d469aea40e1'));
+    console.log(chalk.green('🌍 Program ID can now be customized per run (link or raw ID)'));
     console.log(chalk.blue('🔐 COMPLETE SSO HANDLING - Automatic SSO cancellation & document upload'));
-    
+
     try {
         // SELECT COUNTRY
         const selectedCountryCode = await selectCountry();
-        const countryConfig = COUNTRIES[selectedCountryCode];
-        
+        const defaultCountryConfig = applyProgramOverride(
+            { ...COUNTRIES[selectedCountryCode] },
+            DEFAULT_PROGRAM_OVERRIDE
+        );
+        const programOverride = await askCustomProgram(defaultCountryConfig);
+        const countryConfig = applyProgramOverride(defaultCountryConfig, programOverride);
+
         CONFIG.selectedCountry = selectedCountryCode;
         CONFIG.countryConfig = countryConfig;
         
         console.log(chalk.green(`\n✅ Selected Country: ${countryConfig.flag} ${countryConfig.name} (${countryConfig.code.toUpperCase()})`));
         console.log(chalk.blue(`🆔 Program ID: ${countryConfig.programId}`));
+        if (countryConfig.verificationId) {
+            console.log(chalk.blue(`🔑 Starting with verification ID: ${countryConfig.verificationId}`));
+        }
+        const defaultLocale = COUNTRIES[selectedCountryCode].locale;
+        const forcedLocaleNote = CONFIG.forcedLocale && CONFIG.forcedLocale !== defaultLocale
+            ? ` (forced from ${defaultLocale})`
+            : '';
+        console.log(chalk.blue(`🌐 Locale: ${countryConfig.locale}${forcedLocaleNote || (CONFIG.forcedLocale ? ' (forced)' : '')}`));
         console.log(chalk.blue(`📚 Using colleges file: ${countryConfig.collegesFile}`));
         console.log(chalk.red(`⛔ LEGIT ONLY: Only exact JSON matches will be processed`));
         console.log(chalk.blue(`🔐 SSO SUPPORT: Automatic SSO cancellation & document upload`));
@@ -2150,8 +2261,15 @@ async function main() {
             return;
         }
         
-        // ASK TARGET LINKS
-        const targetLinks = await askTargetLinks(studentsWithExactMatches.length);
+        // ASK TARGET LINKS (OR FORCE SINGLE LINK WHEN A VERIFICATION URL IS PROVIDED)
+        let targetLinks;
+        if (countryConfig.verificationId) {
+            targetLinks = 1;
+            console.log(chalk.yellow('\n🔗 Custom verification link detected; limiting target to 1 link.'));
+        } else {
+            targetLinks = await askTargetLinks(studentsWithExactMatches.length);
+        }
+
         CONFIG.targetLinks = targetLinks;
         
         console.log(chalk.cyan(`\n🚀 Starting multi-country processing with target: ${targetLinks} links\n`));
