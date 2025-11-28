@@ -40,6 +40,9 @@ os.makedirs(USERS_DIR, exist_ok=True)
 # Config file
 BOTS_CONFIG = os.path.join(BOTS_DIR, 'bots_config.json')
 
+# Super admin user id who is allowed to add/manage other bot admins
+SUPER_ADMIN_ID = 7680006005
+
 class RateLimiter:
     """Rate limiter for multiple accounts"""
     def __init__(self, max_concurrent=2, delay_between=15):
@@ -871,10 +874,9 @@ async def setcredentials(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def addbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Allow an existing admin to add another bot/admin pair to the config file."""
     user_id = update.effective_user.id
-    bot_token = context.bot.token
 
-    if not is_admin_for_bot(user_id, bot_token):
-        await update.message.reply_text("❌ Access denied")
+    if user_id != SUPER_ADMIN_ID:
+        await update.message.reply_text("❌ Only the super admin can add new admins or bot tokens")
         return
 
     if len(context.args) < 2:
@@ -891,23 +893,18 @@ async def addbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     success, message, entry = add_bot_to_config(new_bot_token, new_admin_id, bot_name)
 
     if success:
-        await update.message.reply_text(
-            f"✅ {message}\n\n",
-            quote=True,
-        )
+        await update.message.reply_text(f"✅ {message}\n\n")
         started, start_message = await start_bot_from_config(entry)
         if started:
             await update.message.reply_text(
-                "🚀 Bot started without restart. The new admin can message their bot and send /start now.",
-                quote=True,
+                "🚀 Bot started without restart. The new admin can message their bot and send /start now."
             )
         else:
             await update.message.reply_text(
-                f"⚠️ Saved, but auto-start failed: {start_message}. Restart the process if needed.",
-                quote=True,
+                f"⚠️ Saved, but auto-start failed: {start_message}. Restart the process if needed."
             )
     else:
-        await update.message.reply_text(f"❌ {message}", quote=True)
+        await update.message.reply_text(f"❌ {message}")
 
 async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Login"""
