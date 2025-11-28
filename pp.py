@@ -48,10 +48,11 @@ class ChatGPTSignupTripleMethod:
     ChatGPT Auto Signup - TRIPLE METHOD VERSION
     Choose between:
     1. 🏪 Alfashop Tmail API (12 custom domains)
-    2. 🌐 Temp-Mail.io API (13 temp-mail domains)
-    3. 📧 Gmail IMAP (custom domain + Gmail)
-    4. 🔮 Generator.email (Random CapCut-style domains)
-    5. 🎯 Generator.email (Custom domain)
+    2. 📮 Cekmail Tmail API (cekmail.com)
+    3. 🌐 Temp-Mail.io API (13 temp-mail domains)
+    4. 📧 Gmail IMAP (custom domain + Gmail)
+    5. 🔮 Generator.email (Random CapCut-style domains)
+    6. 🎯 Generator.email (Custom domain)
     By: @itsmeaab
     """
     
@@ -79,7 +80,11 @@ class ChatGPTSignupTripleMethod:
         'mrotzis.com', 'xkxkud.com', 'wnbaldwy.com', 'bwmyga.com', 'ozsaip.com'
     ]
     
+    # Cekmail enforced domain
+    CEKMAIL_DEFAULT_DOMAIN = "cekmail.com"
+
     def __init__(self, gmail_user: str, gmail_password: str, alfashop_api_key: str = None,
+                 cekmail_api_key: str = None,
                  thread_id: int = 0, method: str = 'alfashop', user_agent: Optional[str] = None):
         self.auth_url = "https://auth.openai.com"
         self.chatgpt_url = "https://chatgpt.com"
@@ -91,6 +96,10 @@ class ChatGPTSignupTripleMethod:
         # Alfashop API
         self.alfashop_api_key = alfashop_api_key or "K3UyGiVOrN6aSvP9RXZ0"
         self.alfashop_base_url = "https://alfashop.ragn.web.id/api"
+
+        # Cekmail Tmail API
+        self.cekmail_api_key = cekmail_api_key or "HuXcwajFG9PvtZoN6Tq7"
+        self.cekmail_base_url = "https://cekmail.com/api"
         
         # Thread ID
         self.thread_id = thread_id
@@ -127,8 +136,11 @@ class ChatGPTSignupTripleMethod:
         timestamp = time.strftime("%H:%M:%S")
         method_icons = {
             'alfashop': '🏪',
+            'cekmail': '📮',
             'tempmail': '🌐',
-            'imap': '📧'
+            'imap': '📧',
+            'generator_auto': '🔮',
+            'generator_custom': '🎯'
         }
         icon = method_icons.get(self.method, '❓')
         print(f"[{timestamp}] [{icon} T-{self.thread_id:03d}] {message}", flush=True)
@@ -207,6 +219,108 @@ class ChatGPTSignupTripleMethod:
             
         except Exception as e:
             self.log(f"❌ Error: {e}")
+            return None
+
+    # ==================== METHOD 1B: CEKMAIL TMAIL ====================
+
+    def fetch_cekmail_domains(self) -> list:
+        """Fetch available domains from cekmail.com API using the provided key."""
+        forced_domain = self.CEKMAIL_DEFAULT_DOMAIN
+
+        endpoints = [
+            f"{self.cekmail_base_url}/domains/{self.cekmail_api_key}",
+            f"{self.cekmail_base_url}/domains?apikey={self.cekmail_api_key}",
+            f"{self.cekmail_base_url}/domains?api_key={self.cekmail_api_key}",
+            f"{self.cekmail_base_url}/getdomains?apikey={self.cekmail_api_key}",
+        ]
+
+        collected = []
+
+        for url in endpoints:
+            try:
+                response = self.session.get(url, timeout=10)
+                if not response.ok:
+                    continue
+
+                try:
+                    data = response.json()
+                except Exception:
+                    data = response.text
+
+                if isinstance(data, list):
+                    collected.extend(
+                        [d.get('domain', d) if isinstance(d, dict) else d for d in data if d]
+                    )
+                    break
+
+                if isinstance(data, dict):
+                    if isinstance(data.get('domains'), list):
+                        collected.extend(
+                            [d.get('domain', d) if isinstance(d, dict) else d for d in data['domains'] if d]
+                        )
+                        break
+                    if isinstance(data.get('data'), list):
+                        collected.extend(
+                            [d.get('domain', d) if isinstance(d, dict) else d for d in data['data'] if d]
+                        )
+                        break
+
+                if isinstance(data, str) and '@' not in data:
+                    possible = [d.strip() for d in data.split('\n') if '.' in d]
+                    if possible:
+                        collected.extend(possible)
+                        break
+            except Exception:
+                continue
+
+        if forced_domain not in collected:
+            collected.insert(0, forced_domain)
+
+        return [d for i, d in enumerate(collected) if d and d not in collected[:i]]
+
+    def generate_cekmail_email(self) -> Optional[str]:
+        """Generate email using cekmail.com domains."""
+        domains = self.fetch_cekmail_domains()
+        if not domains:
+            self.log("❌ No Cekmail domains available")
+            return None
+
+        try:
+            domain = domains[0]
+            local_part = self.generate_clean_username()
+
+            endpoints = [
+                f"{self.cekmail_base_url}/email/create/{self.cekmail_api_key}",
+                f"{self.cekmail_base_url}/email/create?apikey={self.cekmail_api_key}",
+                f"{self.cekmail_base_url}/email/generate/{self.cekmail_api_key}",
+            ]
+
+            for url in endpoints:
+                try:
+                    response = self.session.get(
+                        url,
+                        params={'domain': domain, 'username': local_part},
+                        timeout=15
+                    )
+
+                    if not response.ok:
+                        continue
+
+                    email_address = response.text.strip()
+                    if '@' not in email_address:
+                        email_address = f"{local_part}@{domain}"
+
+                    if '@' in email_address and '.' in email_address:
+                        self.log(f"✅ Email: {email_address}")
+                        return email_address
+                except Exception:
+                    continue
+
+            self.log("❌ Cekmail email generation failed")
+            return None
+
+        except Exception as e:
+            self.log(f"❌ Cekmail error: {e}")
             return None
     
     def extract_otp_from_html(self, html_content: str) -> Optional[str]:
@@ -325,6 +439,86 @@ class ChatGPTSignupTripleMethod:
             
             time.sleep(3)
         
+        self.log(f"❌ Timeout ({max_wait}s)")
+        return None
+
+    def get_otp_from_cekmail(self, email_address: str, max_wait: int = 120) -> Optional[str]:
+        """📮 METHOD 1B: Get OTP from Cekmail Tmail API"""
+        self.log(f"⏳ Checking Cekmail (max {max_wait}s)...")
+        start_time = time.time()
+        check_count = 0
+
+        endpoint_patterns = [
+            f"messages/{email_address}/{self.cekmail_api_key}",
+            f"email/{email_address}/messages/{self.cekmail_api_key}",
+            f"inbox/{email_address}/{self.cekmail_api_key}",
+            f"mail/{email_address}/{self.cekmail_api_key}",
+        ]
+
+        while (time.time() - start_time) < max_wait:
+            try:
+                check_count += 1
+
+                for endpoint in endpoint_patterns:
+                    try:
+                        url = f"{self.cekmail_base_url}/{endpoint}"
+                        response = self.session.get(url, timeout=10)
+
+                        if response.ok:
+                            content = response.text.strip()
+                            if not content or len(content) < 20:
+                                continue
+
+                            try:
+                                import json
+                                data = json.loads(content)
+
+                                messages = None
+                                if isinstance(data, list) and len(data) > 0:
+                                    messages = data
+                                elif isinstance(data, dict):
+                                    messages = data.get('messages') or data.get('data') or data.get('emails')
+
+                                if messages:
+                                    message = messages[0] if isinstance(messages, list) else messages
+                                    html_body = ''
+                                    if isinstance(message, dict):
+                                        html_body = (
+                                            message.get('html') or
+                                            message.get('body_html') or
+                                            message.get('html_body') or
+                                            message.get('content') or
+                                            message.get('body') or
+                                            str(message)
+                                        )
+                                    else:
+                                        html_body = str(message)
+
+                                    otp = self.extract_otp_from_html(html_body)
+                                    if otp:
+                                        elapsed = time.time() - start_time
+                                        self.log(f"🔑 OTP: {otp} ({elapsed:.1f}s)")
+                                        return otp
+
+                            except json.JSONDecodeError:
+                                otp = self.extract_otp_from_html(content)
+                                if otp:
+                                    elapsed = time.time() - start_time
+                                    self.log(f"🔑 OTP: {otp} ({elapsed:.1f}s)")
+                                    return otp
+
+                    except:
+                        continue
+
+                if check_count % 10 == 0:
+                    elapsed = time.time() - start_time
+                    self.log(f"⏳ Waiting... ({elapsed:.0f}s)")
+
+            except:
+                pass
+
+            time.sleep(3)
+
         self.log(f"❌ Timeout ({max_wait}s)")
         return None
     
@@ -739,6 +933,9 @@ class ChatGPTSignupTripleMethod:
             if self.method == 'alfashop':
                 code = self.get_otp_from_alfashop(email, max_wait=120)
 
+            elif self.method == 'cekmail':
+                code = self.get_otp_from_cekmail(email, max_wait=120)
+
             elif self.method == 'tempmail':
                 code = self.get_otp_from_tempmail(email, self.temp_mail_token, max_wait=120)
 
@@ -774,13 +971,14 @@ class ChatGPTSignupTripleMethod:
 
 def create_single_account(args):
     """Worker function"""
-    thread_id, gmail_user, gmail_password, alfashop_api_key, method, domain, password = args
+    thread_id, gmail_user, gmail_password, alfashop_api_key, cekmail_api_key, method, domain, password = args
     
     try:
         bot = ChatGPTSignupTripleMethod(
             gmail_user=gmail_user,
             gmail_password=gmail_password,
             alfashop_api_key=alfashop_api_key,
+            cekmail_api_key=cekmail_api_key,
             thread_id=thread_id,
             method=method,
             user_agent=generate_user_agent()
@@ -791,6 +989,9 @@ def create_single_account(args):
         
         if method == 'alfashop':
             email_address = bot.generate_alfashop_email()
+
+        elif method == 'cekmail':
+            email_address = bot.generate_cekmail_email()
 
         elif method == 'tempmail':
             email_address, token = bot.generate_tempmail_email()
@@ -834,25 +1035,32 @@ def get_user_input():
     print("="*80)
     print("🚀 ChatGPT Auto Signup - TRIPLE METHOD VERSION")
     print("   1. 🏪 Alfashop Tmail (12 domains, default: alfashop1234)")
-    print("   2. 🌐 Temp-Mail.io (13 domains, default: Meow@1234567)")
-    print("   3. 📧 Gmail IMAP (needs setup, default: Meow@1234567)")
-    print("   4. 🔮 Generator.email (Random CapCut domains)")
-    print("   5. 🎯 Generator.email (Custom domain)")
+    print("   2. 📮 Cekmail Tmail (cekmail.com, default: alfashop1234)")
+    print("   3. 🌐 Temp-Mail.io (13 domains, default: Meow@1234567)")
+    print("   4. 📧 Gmail IMAP (needs setup, default: Meow@1234567)")
+    print("   5. 🔮 Generator.email (Random CapCut domains)")
+    print("   6. 🎯 Generator.email (Custom domain)")
     print("   By: @itsmeaab")
     print("="*80)
     
     # Method selection
     print("\n📊 SELECT METHOD:")
-    method_choice = input("Enter method [1=Alfashop, 2=Temp-Mail, 3=IMAP, 4=GenAuto, 5=GenCustom] (default 1): ").strip()
+    method_choice = input("Enter method [1=Alfashop, 2=Cekmail, 3=Temp-Mail, 4=IMAP, 5=GenAuto, 6=GenCustom] (default 1): ").strip()
 
     # ---------------- METHOD 2 ----------------
     if method_choice == '2':
+        method = 'cekmail'
+        domain = None
+        print("✅ Selected: Cekmail Tmail")
+
+    # ---------------- METHOD 3 ----------------
+    elif method_choice == '3':
         method = 'tempmail'
         domain = None
         print("✅ Selected: Temp-Mail.io")
 
-    # ---------------- METHOD 3 ----------------
-    elif method_choice == '3':
+    # ---------------- METHOD 4 ----------------
+    elif method_choice == '4':
         method = 'imap'
         print("\n🌐 Available IMAP domains:")
         domains = ['dressrosa.me', 'puella.shop', 'wemel.top']
@@ -863,14 +1071,14 @@ def get_user_input():
         domain = domains[domain_choice - 1]
         print(f"✅ Selected: Gmail IMAP → {domain}")
 
-    # ---------------- METHOD 4 ----------------
-    elif method_choice == '4':
+    # ---------------- METHOD 5 ----------------
+    elif method_choice == '5':
         method = 'generator_auto'
         domain = None
         print("🔮 Selected: Generator.email (Random CapCut-style domain)")
 
-    # ---------------- METHOD 5 ----------------
-    elif method_choice == '5':
+    # ---------------- METHOD 6 ----------------
+    elif method_choice == '6':
         method = 'generator_custom'
         domain = input("🌐 Enter custom domain (example: mailpro.org): ").strip()
         print(f"🎯 Selected: Generator.email Custom → {domain}")
@@ -907,7 +1115,7 @@ def get_user_input():
             print("❌ Enter valid number")
 
     # ---------------- Default password logic ----------------
-    if method == 'alfashop':
+    if method in ['alfashop', 'cekmail']:
         default_pass = "alfashop1234"
     else:
         default_pass = "Meow@1234567"
@@ -925,6 +1133,7 @@ def main():
     GMAIL_USER = 'aabkhan402@gmail.com'
     GMAIL_APP_PASSWORD = 'ftljxjidduzsqxob'
     ALFASHOP_API_KEY = 'K3UyGiVOrN6aSvP9RXZ0'
+    CEKMAIL_API_KEY = 'HuXcwajFG9PvtZoN6Tq7'
     
     # Get config
     num_accounts, max_workers, method, domain, password = get_user_input()
@@ -937,6 +1146,8 @@ def main():
         print(f"   Domain: {domain}")
     elif method == 'alfashop':
         print(f"   Domains: {len(ChatGPTSignupTripleMethod.ALFASHOP_DOMAINS)} Alfashop domains")
+    elif method == 'cekmail':
+        print(f"   Domain: {ChatGPTSignupTripleMethod.CEKMAIL_DEFAULT_DOMAIN} (Cekmail)")
     else:
         print(f"   Domains: {len(ChatGPTSignupTripleMethod.TEMP_MAIL_DOMAINS)} Temp-mail domains")
     print(f"   Password: {password}")
@@ -967,6 +1178,7 @@ def main():
                     GMAIL_USER,
                     GMAIL_APP_PASSWORD,
                     ALFASHOP_API_KEY,
+                    CEKMAIL_API_KEY,
                     method,
                     domain,
                     password
@@ -1023,7 +1235,14 @@ def main():
         print("-" * 80)
         for result in results:
             if result['success']:
-                method_icons = {'alfashop': '🏪', 'tempmail': '🌐', 'imap': '📧'}
+                method_icons = {
+                    'alfashop': '🏪',
+                    'cekmail': '📮',
+                    'tempmail': '🌐',
+                    'imap': '📧',
+                    'generator_auto': '🔮',
+                    'generator_custom': '🎯'
+                }
                 icon = method_icons.get(result['method'], '❓')
                 name = result.get('name', 'User')
                 print(f"   {icon} {name:12} | {result['email']}:{result['password']}")
