@@ -1505,16 +1505,16 @@ function loadStudents(countryConfig) {
             console.log(chalk.red(`❌ ${CONFIG.studentsFile} not found`));
             return [];
         }
-        
+
         const content = fs.readFileSync(CONFIG.studentsFile, 'utf-8');
         const students = content.split('\n')
             .filter(line => line.trim())
             .map(line => {
                 const parts = line.split('|').map(s => s.trim());
                 if (parts.length < 2) return null;
-                
+
                 const [name, studentId] = parts;
-                
+
                 let firstName, lastName;
                 if (name.includes(',')) {
                     [lastName, firstName] = name.split(',').map(s => s.trim());
@@ -1523,16 +1523,27 @@ function loadStudents(countryConfig) {
                     firstName = nameParts[0] || 'FIRST';
                     lastName = nameParts.slice(1).join(' ') || 'LAST';
                 }
-                
+
+                const extendedData = parts.length >= 9 ? {
+                    collegeId: parts[2],
+                    collegeName: parts[3],
+                    countryCode: parts[4],
+                    academicTerm: parts[5],
+                    dateIssued: parts[6],
+                    firstDay: parts[7],
+                    lastDay: parts[8]
+                } : {};
+
                 return {
                     firstName: firstName.toUpperCase(),
                     lastName: lastName.toUpperCase(),
                     email: generateEmail(firstName, lastName, countryConfig),
-                    studentId: studentId.trim()
+                    studentId: studentId.trim(),
+                    ...extendedData
                 };
             })
             .filter(s => s);
-            
+
         console.log(chalk.green(`👥 Loaded ${students.length} students`));
         return students;
     } catch (error) {
@@ -1541,7 +1552,28 @@ function loadStudents(countryConfig) {
     }
 }
 
-function findStudentFiles(studentId) {
+function getFilePriority(file, student) {
+    const name = file.name.toLowerCase();
+    const isPdf = name.endsWith('.pdf');
+    const hasCollege = student.collegeId ? name.includes(String(student.collegeId).toLowerCase()) : false;
+    const isTuition = name.includes('tuition');
+    const isSchedule = name.includes('schedule');
+
+    // Higher score = higher priority
+    let score = 0;
+    if (isPdf) score += 100;
+    if (hasCollege) score += 50;
+    if (isTuition) score += 10;
+    if (isSchedule) score += 5;
+
+    // Larger files within same tier tend to be more complete
+    score += Math.min(Math.floor(file.size / 1024), 20);
+
+    return score;
+}
+
+function findStudentFiles(student) {
+    const studentId = student.studentId;
     const dirs = [CONFIG.receiptsDir, 'images', 'documents'];
     const extensions = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
     const files = [];
@@ -1552,8 +1584,12 @@ function findStudentFiles(studentId) {
         try {
             const dirFiles = fs.readdirSync(dir);
             for (const file of dirFiles) {
-                if (file.toLowerCase().includes(studentId.toLowerCase()) &&
-                    extensions.some(ext => file.toLowerCase().endsWith(ext))) {
+                const lowered = file.toLowerCase();
+                const matchesStudent = lowered.includes(studentId.toLowerCase());
+                const matchesCollege = student.collegeId ? lowered.includes(String(student.collegeId).toLowerCase()) : true;
+
+                if (matchesStudent && matchesCollege &&
+                    extensions.some(ext => lowered.endsWith(ext))) {
                     const filePath = path.join(dir, file);
                     if (fs.existsSync(filePath)) {
                         const stats = fs.statSync(filePath);
@@ -1570,7 +1606,10 @@ function findStudentFiles(studentId) {
         } catch (e) { continue; }
     }
     
-    return files.sort((a, b) => b.size - a.size);
+    return files
+        .map(file => ({ ...file, priority: getFilePriority(file, student) }))
+        .sort((a, b) => b.priority - a.priority)
+        .map(({ priority, ...file }) => file);
 }
 
 function saveSpotifyUrl(student, url, verificationId, countryConfig, uploadStats = null, ssoForced = false, ssoCancelled = false) {
@@ -1718,7 +1757,7 @@ async function processStudent(student, sessionId, collegeMatcher, deleteManager,
         }
 
         // STEP 5: Find all student files
-        const files = findStudentFiles(student.studentId);
+        const files = findStudentFiles(student);
         if (files.length === 0) {
             console.log(`[${sessionId}] ❌ [${countryConfig.flag}] No files found for upload`);
             deleteManager.markStudentFailed(student.studentId);
