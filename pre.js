@@ -26,9 +26,44 @@ const CONFIG = {
     countryConfig: null,
     targetLinks: 0,
     targetReached: false,
-    
+
     autoDeleteProcessed: true,
-    retryAllFilesOnFailure: true
+    retryAllFilesOnFailure: true,
+
+    // Network
+    proxyUrl: null,
+    proxyConfig: null
+};
+
+// DataImpulse rotating proxy template per country (user provided)
+const DEFAULT_PROXY_TEMPLATE = 'ffff3162f4aa205c0326__cr.{country}:e3f079bb220c14b6@gw.dataimpulse.com:823';
+
+// Built-in proxy strings by country code for convenience (all supported countries)
+const DEFAULT_PROXIES = {
+    US: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'us'),
+    CA: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'ca'),
+    GB: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'gb'),
+    IN: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'in'),
+    ID: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'id'),
+    AU: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'au'),
+    DE: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'de'),
+    FR: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'fr'),
+    ES: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'es'),
+    IT: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'it'),
+    BR: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'br'),
+    MX: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'mx'),
+    NL: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'nl'),
+    SE: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'se'),
+    NO: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'no'),
+    DK: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'dk'),
+    JP: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'jp'),
+    KR: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'kr'),
+    SG: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'sg'),
+    NZ: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'nz'),
+    ZA: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'za'),
+    CN: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'cn'),
+    AE: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'ae'),
+    PH: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'ph')
 };
 
 // COUNTRY CONFIGURATIONS - ALL 24 COUNTRIES WITH SSO ENDPOINTS
@@ -532,6 +567,70 @@ async function selectCountry() {
     }
 }
 
+// PROXY CONFIGURATION
+async function configureProxy(country) {
+    console.log(chalk.cyan('\n🌐 OPTIONAL: Configure proxy'));
+    console.log(chalk.gray('   Format: http://user:pass@host:port or user:pass@host:port'));
+    console.log(chalk.gray('   Leave empty to connect directly without a proxy.'));
+
+    const defaultProxy = DEFAULT_PROXIES[country.code.toUpperCase()];
+    if (defaultProxy) {
+        console.log(chalk.gray(`   Type "default" to use built-in ${country.code} proxy: ${defaultProxy}`));
+    }
+
+    const answer = await askQuestion(chalk.blue(`\nEnter proxy for ${country.flag} ${country.name} (press Enter to skip): `));
+    const input = answer.trim();
+
+    if (!input) {
+        CONFIG.proxyUrl = null;
+        CONFIG.proxyConfig = null;
+        console.log(chalk.green('✅ Proxy disabled. Using direct connection.'));
+        return;
+    }
+
+    const chosenProxy = input.toLowerCase() === 'default' && defaultProxy ? defaultProxy : input;
+
+    const proxyConfig = parseProxyInput(chosenProxy);
+    if (proxyConfig) {
+        CONFIG.proxyUrl = chosenProxy;
+        CONFIG.proxyConfig = proxyConfig;
+        console.log(chalk.green(`✅ Proxy enabled for ${country.flag} ${country.name}: ${proxyConfig.host}:${proxyConfig.port}`));
+    } else {
+        CONFIG.proxyUrl = null;
+        CONFIG.proxyConfig = null;
+        console.log(chalk.yellow('⚠️ Invalid proxy format. Falling back to direct connection.'));
+    }
+}
+
+function parseProxyInput(input) {
+    try {
+        const urlString = input.match(/^https?:\/\//i) ? input : `http://${input}`;
+        const url = new URL(urlString);
+
+        if (!url.hostname || !url.port) {
+            return null;
+        }
+
+        const proxyConfig = {
+            protocol: url.protocol.replace(':', '') || 'http',
+            host: url.hostname,
+            port: parseInt(url.port, 10),
+        };
+
+        if (url.username) {
+            proxyConfig.auth = {
+                username: decodeURIComponent(url.username),
+                password: decodeURIComponent(url.password || '')
+            };
+        }
+
+        return proxyConfig;
+    } catch (error) {
+        console.log(chalk.yellow(`⚠️ Could not parse proxy: ${error.message}`));
+        return null;
+    }
+}
+
 // TARGET LINKS SELECTOR
 async function askTargetLinks(maxPossible) {
     console.log(chalk.cyan('\n🎯 SET YOUR TARGET:'));
@@ -989,7 +1088,16 @@ class VerificationSession {
                 'X-Locale': this.countryConfig.locale
             }
         };
-        
+
+        if (CONFIG.proxyConfig) {
+            config.proxy = {
+                protocol: CONFIG.proxyConfig.protocol,
+                host: CONFIG.proxyConfig.host,
+                port: CONFIG.proxyConfig.port,
+                auth: CONFIG.proxyConfig.auth
+            };
+        }
+
         return wrapper(axios.create(config));
     }
 
@@ -2065,9 +2173,11 @@ async function main() {
         // SELECT COUNTRY
         const selectedCountryCode = await selectCountry();
         const countryConfig = COUNTRIES[selectedCountryCode];
-        
+
         CONFIG.selectedCountry = selectedCountryCode;
         CONFIG.countryConfig = countryConfig;
+
+        await configureProxy(countryConfig);
         
         console.log(chalk.green(`\n✅ Selected Country: ${countryConfig.flag} ${countryConfig.name} (${countryConfig.code.toUpperCase()})`));
         console.log(chalk.blue(`🆔 Program ID: ${countryConfig.programId}`));
@@ -2076,6 +2186,12 @@ async function main() {
         console.log(chalk.blue(`🔐 SSO SUPPORT: Automatic SSO cancellation & document upload`));
         console.log(chalk.yellow(`🔄 UPLOAD RETRY: ${CONFIG.uploadRetries}x per file before moving on (timeout ${(CONFIG.uploadTimeout/1000)}s)`));
         console.log(chalk.yellow(`⏱️ TIMEOUT: ${CONFIG.verificationTimeout} seconds after each upload`));
+
+        if (CONFIG.proxyConfig) {
+            console.log(chalk.green(`🌐 Proxy: ${CONFIG.proxyConfig.host}:${CONFIG.proxyConfig.port} (${CONFIG.proxyConfig.protocol})`));
+        } else {
+            console.log(chalk.green('🌐 Proxy: Disabled (direct connection)'));
+        }
         
         // Initialize college matcher with country config
         const collegeMatcher = new ExactJsonCollegeMatcher(countryConfig);
