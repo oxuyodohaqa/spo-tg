@@ -35,38 +35,9 @@ const CONFIG = {
     forcedLocale: 'en-us'
 };
 
-// CONFIG OVERRIDES (config.json or environment variables)
-function applyConfigOverrides() {
-    const overridePath = path.join(__dirname, 'config.json');
-    let fileOverrides = {};
+const DEFAULT_CONFIG = { ...CONFIG };
 
-    if (fs.existsSync(overridePath)) {
-        try {
-            fileOverrides = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
-            console.log(chalk.green(`✅ Loaded config overrides from ${overridePath}`));
-        } catch (error) {
-            console.log(chalk.yellow(`⚠️ Failed to parse ${overridePath}: ${error.message}`));
-        }
-    }
-
-    const envOverrides = {
-        maxConcurrent: process.env.MAX_CONCURRENT,
-        batchSize: process.env.BATCH_SIZE,
-        timeout: process.env.HTTP_TIMEOUT,
-        uploadTimeout: process.env.UPLOAD_TIMEOUT,
-        verificationTimeout: process.env.VERIFICATION_TIMEOUT,
-        uploadRetries: process.env.UPLOAD_RETRIES,
-        retryDelay: process.env.RETRY_DELAY,
-        batchDelay: process.env.BATCH_DELAY
-    };
-
-    const mergedOverrides = { ...fileOverrides };
-    for (const [key, value] of Object.entries(envOverrides)) {
-        if (value !== undefined) {
-            mergedOverrides[key] = value;
-        }
-    }
-
+function normalizeConfig() {
     const numericKeys = [
         'maxConcurrent',
         'batchSize',
@@ -78,25 +49,29 @@ function applyConfigOverrides() {
         'batchDelay'
     ];
 
-    for (const [key, value] of Object.entries(mergedOverrides)) {
-        if (!(key in CONFIG)) continue;
+    for (const key of numericKeys) {
+        const rawValue = CONFIG[key];
+        const numericValue = Number(rawValue);
 
-        if (numericKeys.includes(key)) {
-            const numericValue = Number(value);
-            if (!Number.isNaN(numericValue) && numericValue > 0) {
-                CONFIG[key] = numericValue;
-            } else {
-                console.log(chalk.yellow(`⚠️ Ignoring invalid override for ${key}: ${value}`));
-            }
-        } else {
-            CONFIG[key] = value;
+        if (!Number.isFinite(numericValue) || numericValue <= 0) {
+            console.log(chalk.yellow(`⚠️ Invalid ${key} value "${rawValue}". Reverting to default (${DEFAULT_CONFIG[key]}).`));
+            CONFIG[key] = DEFAULT_CONFIG[key];
+            continue;
         }
+
+        CONFIG[key] = numericValue;
     }
 
-    console.log(chalk.blue(`⚙️ Effective config => maxConcurrent: ${CONFIG.maxConcurrent}, batchSize: ${CONFIG.batchSize}, timeout: ${CONFIG.timeout}, uploadTimeout: ${CONFIG.uploadTimeout}, verificationTimeout: ${CONFIG.verificationTimeout}`));
+    if (CONFIG.batchSize < CONFIG.maxConcurrent) {
+        console.log(chalk.yellow(`⚠️ batchSize (${CONFIG.batchSize}) is less than maxConcurrent (${CONFIG.maxConcurrent}). Adjusting batchSize to ${CONFIG.maxConcurrent} to match concurrency.`));
+        CONFIG.batchSize = CONFIG.maxConcurrent;
+    }
 }
 
-applyConfigOverrides();
+// Use only the inline CONFIG values
+normalizeConfig();
+
+console.log(chalk.blue(`⚙️ Effective config => maxConcurrent: ${CONFIG.maxConcurrent}, batchSize: ${CONFIG.batchSize}, timeout: ${CONFIG.timeout}, uploadTimeout: ${CONFIG.uploadTimeout}, verificationTimeout: ${CONFIG.verificationTimeout}`));
 
 // COUNTRY CONFIGURATIONS - ALL 24 COUNTRIES WITH SSO ENDPOINTS
 const COUNTRIES = {
