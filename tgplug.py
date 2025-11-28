@@ -1008,6 +1008,94 @@ async def startbots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("\n".join(summary_lines))
 
+
+async def startallauto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Super-admin command to start auto-plug for every configured admin."""
+    user_id = update.effective_user.id
+
+    if user_id != SUPER_ADMIN_ID:
+        await update.message.reply_text("❌ Only the super admin can start all auto-plugs")
+        return
+
+    config = load_bots_config()
+    valid_bots = [
+        b
+        for b in config['bots']
+        if b['bot_token'] != 'YOUR_BOT_TOKEN_HERE' and b['admin_user_id'] != 0
+    ]
+
+    if not valid_bots:
+        await update.message.reply_text(
+            "❌ No valid bots configured. Please update bots_config.json first."
+        )
+        return
+
+    await update.message.reply_text("⏳ Starting auto-plug for all admins...")
+
+    started = []
+    skipped = []
+    already_running = []
+
+    for bot_cfg in valid_bots:
+        bot_token = bot_cfg['bot_token']
+        admin_id = bot_cfg['admin_user_id']
+        bot_label = bot_cfg.get('bot_name', bot_token)
+
+        account = get_admin_account(admin_id, bot_token)
+
+        reason = None
+        if account.is_running:
+            reason = "already running"
+            already_running.append(f"{bot_label} (admin {admin_id})")
+        elif not account.messages:
+            reason = "no messages"
+        elif not account.last_chat_id:
+            reason = "no chat session saved"
+        elif not account.is_logged_in():
+            reason = "not logged in"
+        elif not await account.ensure_client_connected():
+            reason = "session unavailable"
+
+        if reason:
+            if reason not in ("already running",):
+                skipped.append(f"{bot_label} (admin {admin_id}): {reason}")
+            continue
+
+        bot = Bot(token=bot_token)
+        account.set_auto_plug_running(True, account.last_chat_id)
+        account.auto_task = asyncio.create_task(
+            account.auto_plug_loop(bot, account.last_chat_id)
+        )
+
+        started.append(f"{bot_label} (admin {admin_id})")
+
+        try:
+            await bot.send_message(
+                chat_id=account.last_chat_id,
+                text="🚀 Auto-plug started by super admin.",
+            )
+        except Exception:
+            logger.warning("Could not notify admin %s about auto-plug start", admin_id)
+
+        logger.info(
+            "Auto-plug started for admin %s on bot %s, interval %sh",
+            admin_id,
+            bot_token[:10],
+            account.interval,
+        )
+
+    summary_lines = ["📊 Auto-Plug Start Summary:\n"]
+    if started:
+        summary_lines.append(f"✅ Started ({len(started)}): {', '.join(started)}")
+    if already_running:
+        summary_lines.append(
+            f"⚠️ Already Running ({len(already_running)}): {', '.join(already_running)}"
+        )
+    if skipped:
+        summary_lines.append(f"⏸️ Skipped ({len(skipped)}): {'; '.join(skipped)}")
+
+    await update.message.reply_text("\n".join(summary_lines))
+
 async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Login"""
     user_id = update.effective_user.id
@@ -1616,6 +1704,7 @@ def create_bot_application(token):
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("addbot", addbot_command))
     app.add_handler(CommandHandler("startbots", startbots_command))
+    app.add_handler(CommandHandler("startallauto", startallauto_command))
     app.add_handler(CommandHandler("addmessage", addmessage))
     app.add_handler(CommandHandler("listmessages", listmessages))
     app.add_handler(CommandHandler("removemessage", removemessage))
@@ -1674,7 +1763,15 @@ async def restart_auto_plugs():
         try:
             account = get_admin_account(admin_id, bot_token)
 
-            if not (account.is_logged_in() and account.is_running and account.last_chat_id):
+            # If auto-plug was marked running but we cannot resume safely, clear the flag so
+            # admins can manually start it again instead of getting stuck in a "running" state
+            # with no active task.
+            if not account.is_logged_in() or not account.last_chat_id:
+                if account.is_running:
+                    account.set_auto_plug_running(False)
+                continue
+
+            if not account.is_running:
                 continue
 
             # Skip if the stored session cannot be resumed; admin can restart manually later
@@ -1684,6 +1781,19 @@ async def restart_auto_plugs():
                     admin_id,
                     bot_token[:10],
                 )
+
+                # Clear the running flag and inform the admin so they can /login and restart
+                # instead of silently disabling auto-plug.
+                account.set_auto_plug_running(False)
+
+                try:
+                    bot = Bot(token=bot_token)
+                    await bot.send_message(
+                        chat_id=account.last_chat_id,
+                        text="⚠️ Auto-plug paused after restart because the session is unavailable. Please /login and run /startauto again."
+                    )
+                except Exception:
+                    logger.warning("Could not notify admin %s about paused auto-plug", admin_id)
                 continue
 
             # Calculate remaining wait time from last plug so the loop resumes where it stopped
