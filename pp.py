@@ -97,7 +97,7 @@ class ChatGPTSignupTripleMethod:
         self.alfashop_api_key = alfashop_api_key or "K3UyGiVOrN6aSvP9RXZ0"
         self.alfashop_base_url = "https://alfashop.ragn.web.id/api"
 
-        # Cekmail Tmail API
+        # Cekmail Tmail API (dedicated key + single-domain service)
         self.cekmail_api_key = cekmail_api_key or "HuXcwajFG9PvtZoN6Tq7"
         self.cekmail_base_url = "https://cekmail.com/api"
         
@@ -224,59 +224,8 @@ class ChatGPTSignupTripleMethod:
     # ==================== METHOD 1B: CEKMAIL TMAIL ====================
 
     def fetch_cekmail_domains(self) -> list:
-        """Fetch available domains from cekmail.com API using the provided key."""
-        forced_domain = self.CEKMAIL_DEFAULT_DOMAIN
-
-        endpoints = [
-            f"{self.cekmail_base_url}/domains/{self.cekmail_api_key}",
-            f"{self.cekmail_base_url}/domains?apikey={self.cekmail_api_key}",
-            f"{self.cekmail_base_url}/domains?api_key={self.cekmail_api_key}",
-            f"{self.cekmail_base_url}/getdomains?apikey={self.cekmail_api_key}",
-        ]
-
-        collected = []
-
-        for url in endpoints:
-            try:
-                response = self.session.get(url, timeout=10)
-                if not response.ok:
-                    continue
-
-                try:
-                    data = response.json()
-                except Exception:
-                    data = response.text
-
-                if isinstance(data, list):
-                    collected.extend(
-                        [d.get('domain', d) if isinstance(d, dict) else d for d in data if d]
-                    )
-                    break
-
-                if isinstance(data, dict):
-                    if isinstance(data.get('domains'), list):
-                        collected.extend(
-                            [d.get('domain', d) if isinstance(d, dict) else d for d in data['domains'] if d]
-                        )
-                        break
-                    if isinstance(data.get('data'), list):
-                        collected.extend(
-                            [d.get('domain', d) if isinstance(d, dict) else d for d in data['data'] if d]
-                        )
-                        break
-
-                if isinstance(data, str) and '@' not in data:
-                    possible = [d.strip() for d in data.split('\n') if '.' in d]
-                    if possible:
-                        collected.extend(possible)
-                        break
-            except Exception:
-                continue
-
-        if forced_domain not in collected:
-            collected.insert(0, forced_domain)
-
-        return [d for i, d in enumerate(collected) if d and d not in collected[:i]]
+        """Return the single enforced cekmail.com domain."""
+        return [self.CEKMAIL_DEFAULT_DOMAIN]
 
     def generate_cekmail_email(self) -> Optional[str]:
         """Generate email using cekmail.com domains."""
@@ -1035,7 +984,7 @@ def get_user_input():
     print("="*80)
     print("🚀 ChatGPT Auto Signup - TRIPLE METHOD VERSION")
     print("   1. 🏪 Alfashop Tmail (12 domains, default: alfashop1234)")
-    print("   2. 📮 Cekmail Tmail (cekmail.com, default: alfashop1234)")
+    print("   2. 📮 Cekmail Tmail (cekmail.com, default key provided, pass Premium12121)")
     print("   3. 🌐 Temp-Mail.io (13 domains, default: Meow@1234567)")
     print("   4. 📧 Gmail IMAP (needs setup, default: Meow@1234567)")
     print("   5. 🔮 Generator.email (Random CapCut domains)")
@@ -1115,7 +1064,9 @@ def get_user_input():
             print("❌ Enter valid number")
 
     # ---------------- Default password logic ----------------
-    if method in ['alfashop', 'cekmail']:
+    if method == 'cekmail':
+        default_pass = "Premium12121"
+    elif method == 'alfashop':
         default_pass = "alfashop1234"
     else:
         default_pass = "Meow@1234567"
