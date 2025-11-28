@@ -249,6 +249,10 @@ class AdminAccount:
     async def ensure_connected(self):
         """Ensure client is connected with proper error handling"""
         if not self.client:
+            # Prefer resuming the saved session without triggering a new login flow
+            if await self.ensure_client_connected():
+                return True
+
             if self.is_logged_in():
                 success, msg = await self.login()
                 return success
@@ -289,6 +293,37 @@ class AdminAccount:
     
     def is_logged_in(self):
         return self.config.get('logged_in', False) and os.path.exists(f'{self.session_file}.session')
+
+    async def ensure_client_connected(self):
+        """Connect to Telethon client using the stored session without creating a new login."""
+        if not self.is_logged_in():
+            return False
+
+        if self.client and self.client.is_connected():
+            return True
+
+        required_keys = ('api_id', 'api_hash', 'phone')
+        if not all(k in self.config for k in required_keys):
+            return False
+
+        async with global_rate_limiter:
+            try:
+                self.client = TelegramClient(
+                    self.session_file,
+                    int(self.config['api_id']),
+                    self.config['api_hash']
+                )
+                await self.client.connect()
+
+                if not await self.client.is_user_authorized():
+                    self.config['logged_in'] = False
+                    self.save_config()
+                    return False
+
+                return True
+            except Exception as exc:  # noqa: BLE001
+                logger.error(f"Failed to connect existing session for {self.admin_id}: {exc}")
+                return False
     
     async def login(self):
         if not self.is_configured():
@@ -373,10 +408,17 @@ class AdminAccount:
         """Send plugs with improved session management"""
         if not self.messages:
             return {"success": 0, "failed": 0, "message": "No messages configured"}
-        
-        if not await self.ensure_connected():
-            return {"success": 0, "failed": 0, "message": "Not logged in"}
-        
+
+        if not await self.ensure_client_connected():
+            return {
+                "success": 0,
+                "failed": 0,
+                "success_list": [],
+                "failed_list": [],
+                "message_sent": "",
+                "message": "Not logged in",
+            }
+
         if not self.groups:
             count, msg = await self.refresh_groups()
             if count == 0:
@@ -559,10 +601,13 @@ def get_admin_account(admin_id, bot_token):
     """Get or create admin account with proper session isolation"""
     # Create unique key for this admin+bot combination
     key = hashlib.md5(f"{admin_id}:{bot_token}".encode()).hexdigest()
-    
+
     if key not in admin_accounts:
         admin_accounts[key] = AdminAccount(admin_id, bot_token)
-        logger.info(f"Created new session for admin {admin_id} on bot {bot_token[:10]}...")
+
+        session_exists = os.path.exists(f"{admin_accounts[key].session_file}.session")
+        status = "Loaded existing session" if session_exists else "Created new session storage"
+        logger.info(f"%s for admin %s on bot %s...", status, admin_id, bot_token[:10])
     
     return admin_accounts[key]
 
@@ -1194,11 +1239,15 @@ async def plugnow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     account = get_admin_account(user_id, bot_token)
-    
+
     if not account.messages:
         await update.message.reply_text("❌ Add messages first with /addmessage")
         return
-    
+
+    if not await account.ensure_client_connected():
+        await update.message.reply_text("❌ Please /login before sending plugs.")
+        return
+
     await update.message.reply_text(f"🚀 Sending to {len(account.groups)} groups...")
     result = await account.send_plugs()
     
@@ -1244,9 +1293,13 @@ async def startauto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if account.is_running:
         await update.message.reply_text("⚠️ Already running")
         return
-    
+
     if not account.messages:
         await update.message.reply_text("❌ Add messages first with /addmessage")
+        return
+
+    if not await account.ensure_client_connected():
+        await update.message.reply_text("❌ Please /login again to resume auto-plug.")
         return
 
     chat_id = update.effective_chat.id
@@ -1622,6 +1675,15 @@ async def restart_auto_plugs():
             account = get_admin_account(admin_id, bot_token)
 
             if not (account.is_logged_in() and account.is_running and account.last_chat_id):
+                continue
+
+            # Skip if the stored session cannot be resumed; admin can restart manually later
+            if not await account.ensure_client_connected():
+                logger.info(
+                    "Skipping auto-plug restart for admin %s on bot %s because no session is available",
+                    admin_id,
+                    bot_token[:10],
+                )
                 continue
 
             # Calculate remaining wait time from last plug so the loop resumes where it stopped
