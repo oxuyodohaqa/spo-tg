@@ -38,10 +38,31 @@ const CONFIG = {
 // DataImpulse rotating proxy template per country (user provided)
 const DEFAULT_PROXY_TEMPLATE = 'ffff3162f4aa205c0326__cr.{country}:e3f079bb220c14b6@gw.dataimpulse.com:823';
 
-// Built-in proxy strings by country code for convenience
+// Built-in proxy strings by country code for convenience (all supported countries)
 const DEFAULT_PROXIES = {
     US: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'us'),
+    CA: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'ca'),
+    GB: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'gb'),
+    IN: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'in'),
     ID: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'id'),
+    AU: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'au'),
+    DE: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'de'),
+    FR: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'fr'),
+    ES: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'es'),
+    IT: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'it'),
+    BR: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'br'),
+    MX: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'mx'),
+    NL: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'nl'),
+    SE: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'se'),
+    NO: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'no'),
+    DK: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'dk'),
+    JP: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'jp'),
+    KR: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'kr'),
+    SG: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'sg'),
+    NZ: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'nz'),
+    ZA: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'za'),
+    CN: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'cn'),
+    AE: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'ae'),
     PH: DEFAULT_PROXY_TEMPLATE.replace('{country}', 'ph')
 };
 
