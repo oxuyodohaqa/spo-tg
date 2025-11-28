@@ -71,13 +71,16 @@ class ChatGPTSignupTripleMethod:
         'premiumwithalfa.my.id',
         'alfakalcer.biz.id'
     ]
-    
+
     # Temp-mail.io domains
     TEMP_MAIL_DOMAINS = [
         'jxpomup.com', 'ibolinva.com', 'wyoxafp.com', 'jkotypc.com',
         'cmhvzylmfc.com', 'daouse.com', 'illubd.com', 'mkzaso.com',
         'mrotzis.com', 'xkxkud.com', 'wnbaldwy.com', 'bwmyga.com', 'ozsaip.com'
     ]
+
+    # Bobokuu enforced domain
+    BOBOKUU_DEFAULT_DOMAIN = "cekmail.com"
     
     def __init__(self, gmail_user: str, gmail_password: str, alfashop_api_key: str = None,
                  bobokuu_api_key: str = None,
@@ -221,6 +224,10 @@ class ChatGPTSignupTripleMethod:
 
     def fetch_bobokuu_domains(self) -> list:
         """Fetch available domains from cekmail.com API using the provided key."""
+        # The provider currently offers a single domain. Keep API compatibility in case
+        # additional domains return in the future but always ensure cekmail.com is used.
+        forced_domain = self.BOBOKUU_DEFAULT_DOMAIN
+
         endpoints = [
             # Documented pattern: https://yourdomain.com/api/domains/[apikey]
             f"{self.bobokuu_base_url}/domains/{self.bobokuu_api_key}",
@@ -229,6 +236,8 @@ class ChatGPTSignupTripleMethod:
             f"{self.bobokuu_base_url}/domains?api_key={self.bobokuu_api_key}",
             f"{self.bobokuu_base_url}/getdomains?apikey={self.bobokuu_api_key}",
         ]
+
+        collected = []
 
         for url in endpoints:
             try:
@@ -242,22 +251,37 @@ class ChatGPTSignupTripleMethod:
                     data = response.text
 
                 if isinstance(data, list):
-                    return [d.get('domain', d) if isinstance(d, dict) else d for d in data if d]
+                    collected.extend(
+                        [d.get('domain', d) if isinstance(d, dict) else d for d in data if d]
+                    )
+                    break
 
                 if isinstance(data, dict):
                     if isinstance(data.get('domains'), list):
-                        return [d.get('domain', d) if isinstance(d, dict) else d for d in data['domains'] if d]
+                        collected.extend(
+                            [d.get('domain', d) if isinstance(d, dict) else d for d in data['domains'] if d]
+                        )
+                        break
                     if isinstance(data.get('data'), list):
-                        return [d.get('domain', d) if isinstance(d, dict) else d for d in data['data'] if d]
+                        collected.extend(
+                            [d.get('domain', d) if isinstance(d, dict) else d for d in data['data'] if d]
+                        )
+                        break
 
                 if isinstance(data, str) and '@' not in data:
                     possible = [d.strip() for d in data.split('\n') if '.' in d]
                     if possible:
-                        return possible
+                        collected.extend(possible)
+                        break
             except Exception:
                 continue
 
-        return []
+        # Enforce the sole supported domain even if the API provides extras
+        if forced_domain not in collected:
+            collected.insert(0, forced_domain)
+
+        # Ensure unique, truthy domains
+        return [d for i, d in enumerate(collected) if d and d not in collected[:i]]
 
     def generate_bobokuu_email(self) -> Optional[str]:
         """Generate email using cekmail.com (Bobokuu) dynamic domains."""
@@ -267,7 +291,10 @@ class ChatGPTSignupTripleMethod:
             return None
 
         try:
-            domain = random.choice(domains)
+            if self.BOBOKUU_DEFAULT_DOMAIN in domains:
+                domain = self.BOBOKUU_DEFAULT_DOMAIN
+            else:
+                domain = domains[0]
             local_part = self.generate_clean_username()
 
             endpoints = [
