@@ -8,14 +8,6 @@ const { wrapper } = require('axios-cookiejar-support');
 const chalk = require('chalk');
 const readline = require('readline');
 
-// DEFAULT SHEERID OVERRIDES
-// (Set to provided SheerID verification so runs start with the supplied IDs)
-const DEFAULT_PROGRAM_OVERRIDE = {
-    programId: '67c8c14f5f17a83b745e3f82',
-    verificationId: '6928774136cf1a52cc59895a',
-    baseOrigin: 'https://services.sheerid.com'
-};
-
 // CONFIGURATION
 const CONFIG = {
     studentsFile: 'students.txt',
@@ -42,6 +34,69 @@ const CONFIG = {
     // Force a specific locale across all countries (set to null to keep defaults)
     forcedLocale: 'en-us'
 };
+
+// CONFIG OVERRIDES (config.json or environment variables)
+function applyConfigOverrides() {
+    const overridePath = path.join(__dirname, 'config.json');
+    let fileOverrides = {};
+
+    if (fs.existsSync(overridePath)) {
+        try {
+            fileOverrides = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
+            console.log(chalk.green(`✅ Loaded config overrides from ${overridePath}`));
+        } catch (error) {
+            console.log(chalk.yellow(`⚠️ Failed to parse ${overridePath}: ${error.message}`));
+        }
+    }
+
+    const envOverrides = {
+        maxConcurrent: process.env.MAX_CONCURRENT,
+        batchSize: process.env.BATCH_SIZE,
+        timeout: process.env.HTTP_TIMEOUT,
+        uploadTimeout: process.env.UPLOAD_TIMEOUT,
+        verificationTimeout: process.env.VERIFICATION_TIMEOUT,
+        uploadRetries: process.env.UPLOAD_RETRIES,
+        retryDelay: process.env.RETRY_DELAY,
+        batchDelay: process.env.BATCH_DELAY
+    };
+
+    const mergedOverrides = { ...fileOverrides };
+    for (const [key, value] of Object.entries(envOverrides)) {
+        if (value !== undefined) {
+            mergedOverrides[key] = value;
+        }
+    }
+
+    const numericKeys = [
+        'maxConcurrent',
+        'batchSize',
+        'timeout',
+        'uploadTimeout',
+        'verificationTimeout',
+        'uploadRetries',
+        'retryDelay',
+        'batchDelay'
+    ];
+
+    for (const [key, value] of Object.entries(mergedOverrides)) {
+        if (!(key in CONFIG)) continue;
+
+        if (numericKeys.includes(key)) {
+            const numericValue = Number(value);
+            if (!Number.isNaN(numericValue) && numericValue > 0) {
+                CONFIG[key] = numericValue;
+            } else {
+                console.log(chalk.yellow(`⚠️ Ignoring invalid override for ${key}: ${value}`));
+            }
+        } else {
+            CONFIG[key] = value;
+        }
+    }
+
+    console.log(chalk.blue(`⚙️ Effective config => maxConcurrent: ${CONFIG.maxConcurrent}, batchSize: ${CONFIG.batchSize}, timeout: ${CONFIG.timeout}, uploadTimeout: ${CONFIG.uploadTimeout}, verificationTimeout: ${CONFIG.verificationTimeout}`));
+}
+
+applyConfigOverrides();
 
 // COUNTRY CONFIGURATIONS - ALL 24 COUNTRIES WITH SSO ENDPOINTS
 const COUNTRIES = {
@@ -1020,8 +1075,18 @@ class ImmediateDeleteManager {
         try {
             if (fs.existsSync(CONFIG.receiptsDir)) {
                 const files = fs.readdirSync(CONFIG.receiptsDir);
-                const studentFiles = files.filter(file => file.startsWith(studentId + '_'));
-                
+                const lowerStudentId = studentId.toString().toLowerCase();
+                const studentFiles = files.filter(file => {
+                    const lowerFile = file.toLowerCase();
+                    const hasStudentId = lowerFile.includes(lowerStudentId);
+                    const isStandardReceipt = file.startsWith(studentId + '_');
+                    const isTuitionOrSchedule = lowerFile.includes('tution')
+                        || lowerFile.includes('tuition')
+                        || lowerFile.includes('shedule')
+                        || lowerFile.includes('schedule');
+                    return isStandardReceipt || (hasStudentId && isTuitionOrSchedule);
+                });
+
                 studentFiles.forEach(file => {
                     const filePath = path.join(CONFIG.receiptsDir, file);
                     if (fs.existsSync(filePath)) {
@@ -2201,10 +2266,7 @@ async function main() {
     try {
         // SELECT COUNTRY
         const selectedCountryCode = await selectCountry();
-        const defaultCountryConfig = applyProgramOverride(
-            { ...COUNTRIES[selectedCountryCode] },
-            DEFAULT_PROGRAM_OVERRIDE
-        );
+        const defaultCountryConfig = { ...COUNTRIES[selectedCountryCode] };
         const programOverride = await askCustomProgram(defaultCountryConfig);
         const countryConfig = applyProgramOverride(defaultCountryConfig, programOverride);
 
