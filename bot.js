@@ -2295,9 +2295,9 @@ function initializeBot() {
             throw new Error('Invalid BOT_TOKEN');
         }
 
-        bot = new TelegramBot(BOT_TOKEN, { 
+        bot = new TelegramBot(BOT_TOKEN, {
             polling: {
-                interval: 2000,
+                interval: 300,
                 autoStart: false,
                 params: {
                     timeout: 60,
