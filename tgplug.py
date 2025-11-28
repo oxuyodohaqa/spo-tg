@@ -40,6 +40,9 @@ os.makedirs(USERS_DIR, exist_ok=True)
 # Config file
 BOTS_CONFIG = os.path.join(BOTS_DIR, 'bots_config.json')
 
+# Super admin user id who is allowed to add/manage other bot admins
+SUPER_ADMIN_ID = 7680006005
+
 class RateLimiter:
     """Rate limiter for multiple accounts"""
     def __init__(self, max_concurrent=2, delay_between=15):
@@ -550,6 +553,7 @@ Once logged in, you'll see all available commands!"""
 
 # Global storage - FIXED: Proper session isolation
 admin_accounts = {}
+running_bots = {}
 
 def get_admin_account(admin_id, bot_token):
     """Get or create admin account with proper session isolation"""
@@ -678,6 +682,52 @@ def load_bots_config():
             logger.info(f"Merged {added} bot(s) from environment with {source} bots")
 
     return {'bots': bots}
+
+
+def save_bots_config(config_data):
+    """Persist bot configuration to disk."""
+    try:
+        os.makedirs(BOTS_DIR, exist_ok=True)
+        with open(BOTS_CONFIG, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, indent=2)
+        return True, None
+    except Exception as exc:
+        logger.error(f"Failed to save bots config: {exc}")
+        return False, str(exc)
+
+
+def add_bot_to_config(bot_token: str, admin_user_id: int, bot_name: str | None = None):
+    """Append a new bot/admin mapping to bots_config.json if it does not exist."""
+    if not bot_token:
+        return False, "Bot token is required", None
+
+    try:
+        admin_id_int = int(admin_user_id)
+    except Exception:
+        return False, "admin_user_id must be an integer", None
+
+    file_config = _bots_from_file() or {'bots': []}
+    bots = file_config.get('bots', [])
+
+    if any(bot.get('bot_token') == bot_token for bot in bots):
+        return False, "This bot token is already registered", None
+
+    entry = {
+        'bot_token': bot_token.strip(),
+        'admin_user_id': admin_id_int,
+        'bot_name': bot_name or f"bot_{len(bots) + 1}",
+        'added': datetime.utcnow().isoformat()
+    }
+
+    bots.append(entry)
+    file_config['bots'] = bots
+
+    success, error = save_bots_config(file_config)
+    if not success:
+        return False, f"Failed to save config: {error}", None
+
+    logger.info("Added new bot entry for admin %s", admin_id_int)
+    return True, f"Bot added with admin {admin_id_int}", entry
 
 def is_admin_for_bot(user_id, bot_token):
     """Check if user is admin for this bot"""
@@ -819,6 +869,47 @@ async def setcredentials(update: Update, context: ContextTypes.DEFAULT_TYPE):
     account.set_credentials(api_id, api_hash, phone)
 
     await update.message.reply_text("✅ Credentials saved!\n\nNow use /login")
+
+
+async def addbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Allow an existing admin to add another bot/admin pair to the config file."""
+    user_id = update.effective_user.id
+
+    if user_id != SUPER_ADMIN_ID:
+        await update.message.reply_text("❌ Only the super admin can add new admins or bot tokens")
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            "❌ Format: /addbot <BOT_TOKEN> <ADMIN_USER_ID> [BOT_NAME]\n\n"
+            "Example: /addbot 123:ABC 7680006005 backup_bot",
+        )
+        return
+
+    new_bot_token = context.args[0]
+    new_admin_id = context.args[1]
+    bot_name = " ".join(context.args[2:]).strip() or None
+
+    success, message, entry = add_bot_to_config(new_bot_token, new_admin_id, bot_name)
+
+    if success:
+        await update.message.reply_text(
+            f"✅ {message}\n\n",
+            quote=True,
+        )
+        started, start_message = await start_bot_from_config(entry)
+        if started:
+            await update.message.reply_text(
+                "🚀 Bot started without restart. The new admin can message their bot and send /start now.",
+                quote=True,
+            )
+        else:
+            await update.message.reply_text(
+                f"⚠️ Saved, but auto-start failed: {start_message}. Restart the process if needed.",
+                quote=True,
+            )
+    else:
+        await update.message.reply_text(f"❌ {message}", quote=True)
 
 async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Login"""
@@ -1418,6 +1509,7 @@ def create_bot_application(token):
     app.add_handler(CommandHandler("code", code_command))
     app.add_handler(CommandHandler("logout", logout_command))
     app.add_handler(CommandHandler("status", status_command))
+    app.add_handler(CommandHandler("addbot", addbot_command))
     app.add_handler(CommandHandler("addmessage", addmessage))
     app.add_handler(CommandHandler("listmessages", listmessages))
     app.add_handler(CommandHandler("removemessage", removemessage))
@@ -1433,6 +1525,36 @@ def create_bot_application(token):
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     return app
+
+
+async def start_bot_from_config(bot_config):
+    """Start a single bot application from configuration without stopping others."""
+    bot_token = bot_config['bot_token']
+    bot_name = bot_config.get('bot_name', bot_token)
+    admin_id = bot_config.get('admin_user_id')
+
+    if bot_token in running_bots:
+        logger.info("Bot %s already running; skipping start", bot_name)
+        return False, "Already running"
+
+    try:
+        app = create_bot_application(bot_token)
+        await app.initialize()
+        await app.start()
+        polling_task = asyncio.create_task(
+            app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        )
+        running_bots[bot_token] = {
+            'app': app,
+            'task': polling_task,
+            'bot_name': bot_name,
+            'admin_id': admin_id,
+        }
+        logger.info("Started bot %s for admin %s", bot_name, admin_id)
+        return True, f"{bot_name} (Admin: {admin_id}) started"
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to start bot %s: %s", bot_name, exc)
+        return False, str(exc)
 
 async def restart_auto_plugs():
     """Restart auto-plugs for all admins with proper session isolation"""
@@ -1472,14 +1594,25 @@ async def cleanup_all_sessions():
         try:
             if account.is_running:
                 account.set_auto_plug_running(False)
-            
+
             if account.client and account.client.is_connected():
                 await account.client.disconnect()
-                
+
             if account.auto_task and not account.auto_task.done():
                 account.auto_task.cancel()
         except Exception as e:
             logger.error(f"Cleanup error for {key}: {e}")
+
+    for bot_token, bot_data in list(running_bots.items()):
+        try:
+            if bot_data.get('task') and not bot_data['task'].done():
+                bot_data['task'].cancel()
+            if bot_data.get('app'):
+                await bot_data['app'].stop()
+        except Exception as e:
+            logger.error(f"Cleanup error for bot {bot_token}: {e}")
+
+    running_bots.clear()
 
 async def run_all_bots():
     """Run all configured bots"""
@@ -1499,28 +1632,19 @@ async def run_all_bots():
         return
     
     print(f"\n✅ Loading {len(valid_bots)} bots...\n")
-    
-    # Create applications
-    applications = []
+
+    started = 0
     for bot in valid_bots:
-        try:
-            app = create_bot_application(bot['bot_token'])
-            applications.append((bot['bot_name'], bot['admin_user_id'], app))
-            print(f"✅ {bot['bot_name']} (Admin: {bot['admin_user_id']}) loaded")
-        except Exception as e:
-            print(f"❌ {bot['bot_name']} failed: {e}")
-    
-    if not applications:
+        success, message = await start_bot_from_config(bot)
+        if success:
+            started += 1
+            print(f"✅ {message}")
+        else:
+            print(f"❌ {bot.get('bot_name', bot['bot_token'])} failed: {message}")
+
+    if not started:
         print("❌ No bots started!")
         return
-    
-    print(f"\n🚀 Starting {len(applications)} bots...\n")
-    
-    # Initialize all apps
-    for name, admin_id, app in applications:
-        await app.initialize()
-        await app.start()
-        print(f"✅ {name} started (Admin: {admin_id})")
 
     print("\n" + "="*60)
     print("🤖 All Bots Running!")
@@ -1531,13 +1655,9 @@ async def run_all_bots():
     # ✅ FIXED: Restart auto-plugs for all admins
     await restart_auto_plugs()
 
-    # Start polling for all
-    async with asyncio.TaskGroup() as tg:
-        for name, admin_id, app in applications:
-            tg.create_task(app.updater.start_polling(allowed_updates=Update.ALL_TYPES))
-
-    # Keep running
-    await asyncio.Event().wait()
+    # Keep running without blocking new bot startups
+    while True:
+        await asyncio.sleep(3600)
 
 def main():
     print("""
