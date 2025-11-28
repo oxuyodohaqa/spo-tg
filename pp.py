@@ -80,6 +80,7 @@ class ChatGPTSignupTripleMethod:
     ]
     
     def __init__(self, gmail_user: str, gmail_password: str, alfashop_api_key: str = None,
+                 bobokuu_api_key: str = None,
                  thread_id: int = 0, method: str = 'alfashop', user_agent: Optional[str] = None):
         self.auth_url = "https://auth.openai.com"
         self.chatgpt_url = "https://chatgpt.com"
@@ -91,6 +92,10 @@ class ChatGPTSignupTripleMethod:
         # Alfashop API
         self.alfashop_api_key = alfashop_api_key or "K3UyGiVOrN6aSvP9RXZ0"
         self.alfashop_base_url = "https://alfashop.ragn.web.id/api"
+
+        # Bobokuu Tmail (cekmail.com) API
+        self.bobokuu_api_key = bobokuu_api_key or "HuXcwajFG9PvtZoN6Tq7"
+        self.bobokuu_base_url = "https://cekmail.com/api"
         
         # Thread ID
         self.thread_id = thread_id
@@ -127,8 +132,11 @@ class ChatGPTSignupTripleMethod:
         timestamp = time.strftime("%H:%M:%S")
         method_icons = {
             'alfashop': '🏪',
+            'bobokuu': '📮',
             'tempmail': '🌐',
-            'imap': '📧'
+            'imap': '📧',
+            'generator_auto': '🔮',
+            'generator_custom': '🎯'
         }
         icon = method_icons.get(self.method, '❓')
         print(f"[{timestamp}] [{icon} T-{self.thread_id:03d}] {message}", flush=True)
@@ -207,6 +215,93 @@ class ChatGPTSignupTripleMethod:
             
         except Exception as e:
             self.log(f"❌ Error: {e}")
+            return None
+
+    # ==================== METHOD 1B: BOBOKUU TMAIL (CEKMAIL.COM) ====================
+
+    def fetch_bobokuu_domains(self) -> list:
+        """Fetch available domains from cekmail.com API using the provided key."""
+        endpoints = [
+            # Documented pattern: https://yourdomain.com/api/domains/[apikey]
+            f"{self.bobokuu_base_url}/domains/{self.bobokuu_api_key}",
+            # Common fallbacks used by older deployments
+            f"{self.bobokuu_base_url}/domains?apikey={self.bobokuu_api_key}",
+            f"{self.bobokuu_base_url}/domains?api_key={self.bobokuu_api_key}",
+            f"{self.bobokuu_base_url}/getdomains?apikey={self.bobokuu_api_key}",
+        ]
+
+        for url in endpoints:
+            try:
+                response = self.session.get(url, timeout=10)
+                if not response.ok:
+                    continue
+
+                try:
+                    data = response.json()
+                except Exception:
+                    data = response.text
+
+                if isinstance(data, list):
+                    return [d.get('domain', d) if isinstance(d, dict) else d for d in data if d]
+
+                if isinstance(data, dict):
+                    if isinstance(data.get('domains'), list):
+                        return [d.get('domain', d) if isinstance(d, dict) else d for d in data['domains'] if d]
+                    if isinstance(data.get('data'), list):
+                        return [d.get('domain', d) if isinstance(d, dict) else d for d in data['data'] if d]
+
+                if isinstance(data, str) and '@' not in data:
+                    possible = [d.strip() for d in data.split('\n') if '.' in d]
+                    if possible:
+                        return possible
+            except Exception:
+                continue
+
+        return []
+
+    def generate_bobokuu_email(self) -> Optional[str]:
+        """Generate email using cekmail.com (Bobokuu) dynamic domains."""
+        domains = self.fetch_bobokuu_domains()
+        if not domains:
+            self.log("❌ No Bobokuu domains available")
+            return None
+
+        try:
+            domain = random.choice(domains)
+            local_part = self.generate_clean_username()
+
+            endpoints = [
+                f"{self.bobokuu_base_url}/email/create/{self.bobokuu_api_key}",
+                f"{self.bobokuu_base_url}/email/create?apikey={self.bobokuu_api_key}",
+                f"{self.bobokuu_base_url}/email/generate/{self.bobokuu_api_key}",
+            ]
+
+            for url in endpoints:
+                try:
+                    response = self.session.get(
+                        url,
+                        params={'domain': domain, 'username': local_part},
+                        timeout=15
+                    )
+
+                    if not response.ok:
+                        continue
+
+                    email_address = response.text.strip()
+                    if '@' not in email_address:
+                        email_address = f"{local_part}@{domain}"
+
+                    if '@' in email_address and '.' in email_address:
+                        self.log(f"✅ Email: {email_address}")
+                        return email_address
+                except Exception:
+                    continue
+
+            self.log("❌ Bobokuu email generation failed")
+            return None
+
+        except Exception as e:
+            self.log(f"❌ Bobokuu error: {e}")
             return None
     
     def extract_otp_from_html(self, html_content: str) -> Optional[str]:
@@ -324,10 +419,90 @@ class ChatGPTSignupTripleMethod:
                 pass
             
             time.sleep(3)
-        
+
         self.log(f"❌ Timeout ({max_wait}s)")
         return None
-    
+
+    def get_otp_from_bobokuu(self, email_address: str, max_wait: int = 120) -> Optional[str]:
+        """📮 METHOD 1B: Get OTP from Bobokuu cekmail.com API"""
+        self.log(f"⏳ Checking Bobokuu (max {max_wait}s)...")
+        start_time = time.time()
+        check_count = 0
+
+        endpoint_patterns = [
+            f"messages/{email_address}/{self.bobokuu_api_key}",
+            f"email/{email_address}/messages/{self.bobokuu_api_key}",
+            f"inbox/{email_address}/{self.bobokuu_api_key}",
+            f"mail/{email_address}/{self.bobokuu_api_key}",
+        ]
+
+        while (time.time() - start_time) < max_wait:
+            try:
+                check_count += 1
+
+                for endpoint in endpoint_patterns:
+                    try:
+                        url = f"{self.bobokuu_base_url}/{endpoint}"
+                        response = self.session.get(url, timeout=10)
+
+                        if response.ok:
+                            content = response.text.strip()
+                            if not content or len(content) < 20:
+                                continue
+
+                            try:
+                                import json
+                                data = json.loads(content)
+
+                                messages = None
+                                if isinstance(data, list) and len(data) > 0:
+                                    messages = data
+                                elif isinstance(data, dict):
+                                    messages = data.get('messages') or data.get('data') or data.get('emails')
+
+                                if messages:
+                                    message = messages[0] if isinstance(messages, list) else messages
+                                    html_body = ''
+                                    if isinstance(message, dict):
+                                        html_body = (
+                                            message.get('html') or
+                                            message.get('body_html') or
+                                            message.get('html_body') or
+                                            message.get('content') or
+                                            message.get('body') or
+                                            str(message)
+                                        )
+                                    else:
+                                        html_body = str(message)
+
+                                    otp = self.extract_otp_from_html(html_body)
+                                    if otp:
+                                        elapsed = time.time() - start_time
+                                        self.log(f"🔑 OTP: {otp} ({elapsed:.1f}s)")
+                                        return otp
+
+                            except json.JSONDecodeError:
+                                otp = self.extract_otp_from_html(content)
+                                if otp:
+                                    elapsed = time.time() - start_time
+                                    self.log(f"🔑 OTP: {otp} ({elapsed:.1f}s)")
+                                    return otp
+
+                    except Exception:
+                        continue
+
+                if check_count % 10 == 0:
+                    elapsed = time.time() - start_time
+                    self.log(f"⏳ Waiting... ({elapsed:.0f}s)")
+
+            except Exception:
+                pass
+
+            time.sleep(3)
+
+        self.log(f"❌ Timeout ({max_wait}s)")
+        return None
+
     # ==================== METHOD 2: TEMP-MAIL.IO ====================
     
     def generate_tempmail_email(self) -> Tuple[str, Optional[str]]:
@@ -739,6 +914,9 @@ class ChatGPTSignupTripleMethod:
             if self.method == 'alfashop':
                 code = self.get_otp_from_alfashop(email, max_wait=120)
 
+            elif self.method == 'bobokuu':
+                code = self.get_otp_from_bobokuu(email, max_wait=120)
+
             elif self.method == 'tempmail':
                 code = self.get_otp_from_tempmail(email, self.temp_mail_token, max_wait=120)
 
@@ -774,13 +952,14 @@ class ChatGPTSignupTripleMethod:
 
 def create_single_account(args):
     """Worker function"""
-    thread_id, gmail_user, gmail_password, alfashop_api_key, method, domain, password = args
+    thread_id, gmail_user, gmail_password, alfashop_api_key, bobokuu_api_key, method, domain, password = args
     
     try:
         bot = ChatGPTSignupTripleMethod(
             gmail_user=gmail_user,
             gmail_password=gmail_password,
             alfashop_api_key=alfashop_api_key,
+            bobokuu_api_key=bobokuu_api_key,
             thread_id=thread_id,
             method=method,
             user_agent=generate_user_agent()
@@ -791,6 +970,9 @@ def create_single_account(args):
         
         if method == 'alfashop':
             email_address = bot.generate_alfashop_email()
+
+        elif method == 'bobokuu':
+            email_address = bot.generate_bobokuu_email()
 
         elif method == 'tempmail':
             email_address, token = bot.generate_tempmail_email()
@@ -838,12 +1020,13 @@ def get_user_input():
     print("   3. 📧 Gmail IMAP (needs setup, default: Meow@1234567)")
     print("   4. 🔮 Generator.email (Random CapCut domains)")
     print("   5. 🎯 Generator.email (Custom domain)")
+    print("   6. 📮 Bobokuu Tmail (cekmail.com dynamic domains)")
     print("   By: @itsmeaab")
     print("="*80)
-    
+
     # Method selection
     print("\n📊 SELECT METHOD:")
-    method_choice = input("Enter method [1=Alfashop, 2=Temp-Mail, 3=IMAP, 4=GenAuto, 5=GenCustom] (default 1): ").strip()
+    method_choice = input("Enter method [1=Alfashop, 2=Temp-Mail, 3=IMAP, 4=GenAuto, 5=GenCustom, 6=Bobokuu] (default 1): ").strip()
 
     # ---------------- METHOD 2 ----------------
     if method_choice == '2':
@@ -874,6 +1057,12 @@ def get_user_input():
         method = 'generator_custom'
         domain = input("🌐 Enter custom domain (example: mailpro.org): ").strip()
         print(f"🎯 Selected: Generator.email Custom → {domain}")
+
+    # ---------------- METHOD 6 ----------------
+    elif method_choice == '6':
+        method = 'bobokuu'
+        domain = None
+        print("📮 Selected: Bobokuu Tmail (cekmail.com)")
 
     # ---------------- METHOD 1 (Default) ----------------
     else:
@@ -907,7 +1096,7 @@ def get_user_input():
             print("❌ Enter valid number")
 
     # ---------------- Default password logic ----------------
-    if method == 'alfashop':
+    if method in ['alfashop', 'bobokuu']:
         default_pass = "alfashop1234"
     else:
         default_pass = "Meow@1234567"
@@ -925,6 +1114,7 @@ def main():
     GMAIL_USER = 'aabkhan402@gmail.com'
     GMAIL_APP_PASSWORD = 'ftljxjidduzsqxob'
     ALFASHOP_API_KEY = 'K3UyGiVOrN6aSvP9RXZ0'
+    BOBOKUU_API_KEY = 'HuXcwajFG9PvtZoN6Tq7'
     
     # Get config
     num_accounts, max_workers, method, domain, password = get_user_input()
@@ -937,6 +1127,8 @@ def main():
         print(f"   Domain: {domain}")
     elif method == 'alfashop':
         print(f"   Domains: {len(ChatGPTSignupTripleMethod.ALFASHOP_DOMAINS)} Alfashop domains")
+    elif method == 'bobokuu':
+        print("   Domains: Dynamic from cekmail.com")
     else:
         print(f"   Domains: {len(ChatGPTSignupTripleMethod.TEMP_MAIL_DOMAINS)} Temp-mail domains")
     print(f"   Password: {password}")
@@ -967,6 +1159,7 @@ def main():
                     GMAIL_USER,
                     GMAIL_APP_PASSWORD,
                     ALFASHOP_API_KEY,
+                    BOBOKUU_API_KEY,
                     method,
                     domain,
                     password
@@ -1023,7 +1216,14 @@ def main():
         print("-" * 80)
         for result in results:
             if result['success']:
-                method_icons = {'alfashop': '🏪', 'tempmail': '🌐', 'imap': '📧'}
+                method_icons = {
+                    'alfashop': '🏪',
+                    'bobokuu': '📮',
+                    'tempmail': '🌐',
+                    'imap': '📧',
+                    'generator_auto': '🔮',
+                    'generator_custom': '🎯'
+                }
                 icon = method_icons.get(result['method'], '❓')
                 name = result.get('name', 'User')
                 print(f"   {icon} {name:12} | {result['email']}:{result['password']}")
