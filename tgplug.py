@@ -810,6 +810,9 @@ Click "Setup Account" to get started
 
 After setup, you can auto-plug to all your groups!"""
 
+    if user_id == SUPER_ADMIN_ID:
+        welcome_text += "\n\n🛠 Super Admin: Use /startbots to launch all configured bots after a restart."
+
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(welcome_text, reply_markup=reply_markup)
 
@@ -905,6 +908,60 @@ async def addbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
     else:
         await update.message.reply_text(f"❌ {message}")
+
+
+async def startbots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Super-admin command to start all configured bots after a restart."""
+    user_id = update.effective_user.id
+
+    if user_id != SUPER_ADMIN_ID:
+        await update.message.reply_text("❌ Only the super admin can start all bots")
+        return
+
+    config = load_bots_config()
+    valid_bots = [
+        b
+        for b in config['bots']
+        if b['bot_token'] != 'YOUR_BOT_TOKEN_HERE' and b['admin_user_id'] != 0
+    ]
+
+    if not valid_bots:
+        await update.message.reply_text(
+            "❌ No valid bots configured. Please update bots_config.json first."
+        )
+        return
+
+    await update.message.reply_text("🚀 Starting all configured bots...")
+
+    started = []
+    already_running = []
+    failed = []
+
+    for bot in valid_bots:
+        bot_label = bot.get('bot_name', bot['bot_token'])
+        success, message = await start_bot_from_config(bot)
+
+        if success:
+            started.append(bot_label)
+        elif message == "Already running":
+            already_running.append(bot_label)
+        else:
+            failed.append(f"{bot_label}: {message}")
+
+    # Restart auto-plugs for any admins that had them running previously
+    await restart_auto_plugs()
+
+    summary_lines = ["🤖 Start Bots Summary:\n"]
+    if started:
+        summary_lines.append(f"✅ Started ({len(started)}): {', '.join(started)}")
+    if already_running:
+        summary_lines.append(
+            f"⚠️ Already Running ({len(already_running)}): {', '.join(already_running)}"
+        )
+    if failed:
+        summary_lines.append(f"❌ Failed ({len(failed)}): {'; '.join(failed)}")
+
+    await update.message.reply_text("\n".join(summary_lines))
 
 async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Login"""
@@ -1505,6 +1562,7 @@ def create_bot_application(token):
     app.add_handler(CommandHandler("logout", logout_command))
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("addbot", addbot_command))
+    app.add_handler(CommandHandler("startbots", startbots_command))
     app.add_handler(CommandHandler("addmessage", addmessage))
     app.add_handler(CommandHandler("listmessages", listmessages))
     app.add_handler(CommandHandler("removemessage", removemessage))
