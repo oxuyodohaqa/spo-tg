@@ -8,6 +8,14 @@ const { wrapper } = require('axios-cookiejar-support');
 const chalk = require('chalk');
 const readline = require('readline');
 
+// DEFAULT SHEERID OVERRIDES
+// (Set to provided SheerID verification so runs start with the supplied IDs)
+const DEFAULT_PROGRAM_OVERRIDE = {
+    programId: '67c8c14f5f17a83b745e3f82',
+    verificationId: '6928774136cf1a52cc59895a',
+    baseOrigin: 'https://services.sheerid.com'
+};
+
 // CONFIGURATION
 const CONFIG = {
     studentsFile: 'students.txt',
@@ -30,9 +38,6 @@ const CONFIG = {
 
     autoDeleteProcessed: true,
     retryAllFilesOnFailure: true,
-
-    // Optional default program override pulled from configuration
-    defaultProgramOverride: null,
 
     // Force a specific locale across all countries (set to null to keep defaults)
     forcedLocale: 'en-us'
@@ -2198,7 +2203,7 @@ async function main() {
         const selectedCountryCode = await selectCountry();
         const defaultCountryConfig = applyProgramOverride(
             { ...COUNTRIES[selectedCountryCode] },
-            CONFIG.defaultProgramOverride
+            DEFAULT_PROGRAM_OVERRIDE
         );
         const programOverride = await askCustomProgram(defaultCountryConfig);
         const countryConfig = applyProgramOverride(defaultCountryConfig, programOverride);
