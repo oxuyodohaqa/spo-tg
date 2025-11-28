@@ -43,31 +43,6 @@ const CONFIG = {
     forcedLocale: 'en-us'
 };
 
-// CONFIG LOADING
-// Allows overriding CONFIG values via a local config.json file.
-// Only top-level keys present in CONFIG are merged to avoid accidental typos.
-const CONFIG_PATH = path.join(__dirname, 'config.json');
-
-function loadLocalConfig() {
-    if (!fs.existsSync(CONFIG_PATH)) return;
-
-    try {
-        const fileConfig = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-
-        Object.entries(fileConfig).forEach(([key, value]) => {
-            if (Object.prototype.hasOwnProperty.call(CONFIG, key)) {
-                CONFIG[key] = value;
-            }
-        });
-
-        console.log(chalk.green(`✅ Loaded configuration overrides from ${CONFIG_PATH}`));
-    } catch (error) {
-        console.log(chalk.red(`⚠️ Failed to read ${CONFIG_PATH}: ${error.message}`));
-    }
-}
-
-loadLocalConfig();
-
 // COUNTRY CONFIGURATIONS - ALL 24 COUNTRIES WITH SSO ENDPOINTS
 const COUNTRIES = {
     'US': {
