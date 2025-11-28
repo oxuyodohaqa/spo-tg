@@ -842,7 +842,7 @@ class ExactJsonCollegeMatcher {
         this.invalidCollegeIds = new Set();
         this.workingCollegeIds = new Set();
         this.ssoCollegeIds = new Set();
-        this.receiptPattern = /^(\d+)_(\d+)\.(png|jpg|jpeg|pdf|webp)$/i;
+        this.receiptPattern = /^(?<studentId>\d+)_(?<collegeId>\d+)[^/]*\.(png|jpg|jpeg|pdf|webp)$/i;
         this.successCount = 0;
         this.failedCount = 0;
         this.exactMatchCount = 0;
@@ -858,23 +858,36 @@ class ExactJsonCollegeMatcher {
         }
         
         const files = fs.readdirSync(CONFIG.receiptsDir);
-        const receiptFiles = files.filter(file => this.receiptPattern.test(file));
-        
-        if (receiptFiles.length === 0) {
-            console.log(chalk.red(`❌ No receipt files found`));
+        const unmatchedFiles = [];
+
+        files.forEach(file => {
+            const match = file.match(this.receiptPattern);
+
+            if (match) {
+                const studentId = match.groups?.studentId || match[1];
+                const collegeIdRaw = match.groups?.collegeId || match[2];
+
+                if (studentId && collegeIdRaw) {
+                    const collegeId = parseInt(collegeIdRaw);
+                    this.studentCollegeMap.set(studentId, collegeId);
+                    return;
+                }
+            }
+
+            unmatchedFiles.push(file);
+        });
+
+        if (unmatchedFiles.length > 0) {
+            const sample = unmatchedFiles.slice(0, 5).join(', ');
+            console.log(chalk.yellow(`⚠️ Skipped ${unmatchedFiles.length} file(s) with unexpected names: ${sample}`));
+        }
+
+        if (this.studentCollegeMap.size === 0) {
+            console.log(chalk.red(`❌ No valid receipt files found`));
             return false;
         }
-        
-        receiptFiles.forEach(file => {
-            const match = file.match(this.receiptPattern);
-            if (match) {
-                const studentId = match[1];
-                const collegeId = parseInt(match[2]);
-                this.studentCollegeMap.set(studentId, collegeId);
-            }
-        });
-        
-        console.log(chalk.green(`📄 Mapped ${this.studentCollegeMap.size} students from receipt files`));
+
+        console.log(chalk.green(`📄 Mapped ${this.studentCollegeMap.size} students from ${files.length} receipt file(s)`));
         return true;
     }
     
