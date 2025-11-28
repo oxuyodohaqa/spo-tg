@@ -8,14 +8,6 @@ const { wrapper } = require('axios-cookiejar-support');
 const chalk = require('chalk');
 const readline = require('readline');
 
-// DEFAULT SHEERID OVERRIDES
-// (Set to provided SheerID verification so runs start with the supplied IDs)
-const DEFAULT_PROGRAM_OVERRIDE = {
-    programId: '67c8c14f5f17a83b745e3f82',
-    verificationId: '6928774136cf1a52cc59895a',
-    baseOrigin: 'https://services.sheerid.com'
-};
-
 // CONFIGURATION
 const CONFIG = {
     studentsFile: 'students.txt',
@@ -1020,8 +1012,18 @@ class ImmediateDeleteManager {
         try {
             if (fs.existsSync(CONFIG.receiptsDir)) {
                 const files = fs.readdirSync(CONFIG.receiptsDir);
-                const studentFiles = files.filter(file => file.startsWith(studentId + '_'));
-                
+                const lowerStudentId = studentId.toString().toLowerCase();
+                const studentFiles = files.filter(file => {
+                    const lowerFile = file.toLowerCase();
+                    const hasStudentId = lowerFile.includes(lowerStudentId);
+                    const isStandardReceipt = file.startsWith(studentId + '_');
+                    const isTuitionOrSchedule = lowerFile.includes('tution')
+                        || lowerFile.includes('tuition')
+                        || lowerFile.includes('shedule')
+                        || lowerFile.includes('schedule');
+                    return isStandardReceipt || (hasStudentId && isTuitionOrSchedule);
+                });
+
                 studentFiles.forEach(file => {
                     const filePath = path.join(CONFIG.receiptsDir, file);
                     if (fs.existsSync(filePath)) {
@@ -2201,10 +2203,7 @@ async function main() {
     try {
         // SELECT COUNTRY
         const selectedCountryCode = await selectCountry();
-        const defaultCountryConfig = applyProgramOverride(
-            { ...COUNTRIES[selectedCountryCode] },
-            DEFAULT_PROGRAM_OVERRIDE
-        );
+        const defaultCountryConfig = { ...COUNTRIES[selectedCountryCode] };
         const programOverride = await askCustomProgram(defaultCountryConfig);
         const countryConfig = applyProgramOverride(defaultCountryConfig, programOverride);
 
