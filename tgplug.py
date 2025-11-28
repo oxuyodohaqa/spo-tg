@@ -1613,26 +1613,56 @@ async def restart_auto_plugs():
     """Restart auto-plugs for all admins with proper session isolation"""
     config = load_bots_config()
     valid_bots = [b for b in config['bots'] if b['bot_token'] != 'YOUR_BOT_TOKEN_HERE' and b['admin_user_id'] != 0]
-    
+
     for bot_config in valid_bots:
         bot_token = bot_config['bot_token']
         admin_id = bot_config['admin_user_id']
-        
+
         try:
             account = get_admin_account(admin_id, bot_token)
-            
+
             if not (account.is_logged_in() and account.is_running and account.last_chat_id):
                 continue
-            
+
+            # Calculate remaining wait time from last plug so the loop resumes where it stopped
+            delay_seconds = 0
+            last_plug = account.config.get('last_plug')
+            if last_plug and account.interval:
+                try:
+                    last_plug_dt = datetime.fromisoformat(last_plug)
+                    next_plug_dt = last_plug_dt + timedelta(hours=account.interval)
+                    now = datetime.utcnow()
+                    if next_plug_dt > now:
+                        delay_seconds = (next_plug_dt - now).total_seconds()
+                except Exception as parse_err:
+                    logger.warning(
+                        "Could not restore plug schedule for admin %s: %s", admin_id, parse_err
+                    )
+
             # Create bot instance for this specific token
             bot = Bot(token=bot_token)
-            
-            # Start auto-plug loop
+
+            # Start auto-plug loop after the remaining delay (if any)
             account.auto_task = asyncio.create_task(
-                account.auto_plug_loop(bot, account.last_chat_id)
+                delayed_start(account.auto_plug_loop, bot, account.last_chat_id, delay_seconds)
             )
-            logger.info(f"Restarted auto-plug for admin {admin_id}")
-            
+
+            if delay_seconds:
+                minutes = int(delay_seconds // 60)
+                await bot.send_message(
+                    chat_id=account.last_chat_id,
+                    text=f"⏳ Auto-plug will resume in {minutes} minute(s) after restart."
+                )
+            else:
+                await bot.send_message(
+                    chat_id=account.last_chat_id,
+                    text="🚀 Auto-plug resumed immediately after restart."
+                )
+
+            logger.info(
+                "Restarted auto-plug for admin %s with %.0fs delay", admin_id, delay_seconds
+            )
+
         except Exception as e:
             logger.error(f"Failed to restart auto-plug for admin {admin_id}: {e}")
 
