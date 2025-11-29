@@ -416,6 +416,7 @@ class AdminAccount:
                 "success_list": [],
                 "failed_list": [],
                 "message_sent": "",
+                "messages_used": [],
                 "message": "Not logged in",
             }
 
@@ -424,23 +425,22 @@ class AdminAccount:
             if count == 0:
                 return {"success": 0, "failed": 0, "message": "No groups found"}
         
-        # 🔥 Sequential message selection
-        message = self.messages[self.message_index]
-
-        # 🔄 Move to next message index
-        self.message_index = (self.message_index + 1) % len(self.messages)
-        self.config['message_index'] = self.message_index
-        self.save_config()
-
+        # Use a single message per full plug run so multi-message setups don't spam
         success_list = []
         failed_list = []
+        messages_used: list[str] = []
 
-        
+        # Pick the current message once for this entire run, then advance the pointer
+        message = self.messages[self.message_index]
+        messages_used.append(message)
+        self.message_index = (self.message_index + 1) % len(self.messages)
+
+
         # Process in smaller batches with delays
         BATCH_SIZE = 3
         for i in range(0, len(self.groups), BATCH_SIZE):
             batch = self.groups[i:i + BATCH_SIZE]
-            
+
             for group in batch:
                 try:
                     await self.client.send_message(group['chat_id'], message)
@@ -468,14 +468,24 @@ class AdminAccount:
         
         self.config['total_plugs'] = self.total_plugs
         self.config['last_plug'] = datetime.utcnow().isoformat()
+        self.config['message_index'] = self.message_index
         self.save_config()
-        
+
+        # Build a readable preview of the messages used in this run
+        unique_messages = list(dict.fromkeys(messages_used))
+        preview_limit = 5
+        preview_lines = [f"{idx + 1}. {msg}" for idx, msg in enumerate(unique_messages[:preview_limit])]
+        if len(unique_messages) > preview_limit:
+            preview_lines.append(f"...and {len(unique_messages) - preview_limit} more")
+        message_preview = "\n".join(preview_lines) if preview_lines else "N/A"
+
         return {
             "success": len(success_list),
             "failed": len(failed_list),
             "success_list": success_list,
             "failed_list": failed_list,
-            "message_sent": message,   # 🔥 The message used
+            "messages_used": messages_used,
+            "message_sent": message_preview,   # 🔥 The messages used this run
             "message": "Completed"
         }
 
@@ -485,10 +495,11 @@ class AdminAccount:
         
         while self.is_running:
             try:
-                result = await self.send_plugs()
-                
+                async with auto_plug_lock:
+                    result = await self.send_plugs()
+
                 status_msg = f"🚀 Auto-Plug Complete\n\n"
-                status_msg +=f"📝 Message Used:\n{result['message_sent']}\n\n"
+                status_msg +=f"📝 Messages Used:\n{result['message_sent']}\n\n"
                 status_msg += f"✅ Success: {result['success']}\n"
                 status_msg += f"❌ Failed: {result['failed']}\n"
                 status_msg += f"📊 Total Plugs: {self.total_plugs}\n"
@@ -596,6 +607,8 @@ Once logged in, you'll see all available commands!"""
 # Global storage - FIXED: Proper session isolation
 admin_accounts = {}
 running_bots = {}
+# Ensure auto-plugs run one at a time across all admins to avoid simultaneous blasts
+auto_plug_lock = asyncio.Lock()
 
 def get_admin_account(admin_id, bot_token):
     """Get or create admin account with proper session isolation"""
@@ -1340,12 +1353,12 @@ async def plugnow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = await account.send_plugs()
     
     response = (
-    f"✅ Plug Complete!\n\n"
-    f"📝 Message Used:\n{result['message_sent']}\n\n"
-    f"📤 Sent: {result['success']}\n"
-    f"❌ Failed: {result['failed']}\n"
-    f"📊 Total Plugs: {account.total_plugs}\n\n"
-)
+        f"✅ Plug Complete!\n\n"
+        f"📝 Messages Used:\n{result['message_sent']}\n\n"
+        f"📤 Sent: {result['success']}\n"
+        f"❌ Failed: {result['failed']}\n"
+        f"📊 Total Plugs: {account.total_plugs}\n\n"
+    )
 
     
     # Show successful groups
@@ -1581,7 +1594,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Detailed response
         response = f"✅ Plug Complete!\n\n"
-        response += f"📝 Message Used:\n{result['message_sent']}\n\n"
+        response += f"📝 Messages Used:\n{result['message_sent']}\n\n"
         response += f"📤 Sent: {result['success']}\n"
         response += f"❌ Failed: {result['failed']}\n"
         response += f"📊 Total Plugs: {account.total_plugs}\n\n"
