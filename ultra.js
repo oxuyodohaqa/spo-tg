@@ -473,6 +473,39 @@ async function handleCaptchaWithBuster(page, browserId, maxRetries = 5) {
     return false;
 }
 
+async function detectTransientError(page) {
+    try {
+        return await page.evaluate(() => {
+            const text = document.body.innerText.toLowerCase();
+            return text.includes('something went wrong') || text.includes('try again later');
+        });
+    } catch (error) {
+        return false;
+    }
+}
+
+async function recoverFromTransientError(page, browserId, maxRetries = 2) {
+    let detected = false;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const hasError = await detectTransientError(page);
+        if (!hasError) {
+            break;
+        }
+
+        detected = true;
+        console.log(`[B-${browserId}] ⚠️ 'Something went wrong' detected - retrying submit (${attempt}/${maxRetries})`);
+        await smartClickContinue(page, browserId, 8);
+        await fastDelay(2000);
+    }
+
+    if (detected) {
+        console.log(`[B-${browserId}] 🔄 Completed recovery attempts for transient error`);
+    }
+
+    return detected;
+}
+
 // ✅ STRICT STUDENT VERIFICATION - ONLY RETURNS TRUE ON ACTUAL SUCCESS
 async function verifyStudentAccount(page, browserId, verificationUrl, email, password) {
     try {
@@ -907,7 +940,7 @@ async function signupOnly() {
 
         while (captchaAttempts < maxCaptchaAttempts) {
             const captchaPresent = await page.evaluate(() => {
-                return document.querySelector('iframe[src*="recaptcha"]') || 
+                return document.querySelector('iframe[src*="recaptcha"]') ||
                        document.querySelector('iframe[title*="challenge"]');
             });
 
@@ -929,6 +962,8 @@ async function signupOnly() {
             captchaAttempts++;
             await fastDelay(5000);
         }
+
+        await recoverFromTransientError(page, browserId);
 
         // Wait for signup completion
         console.log(`[B-${browserId}] ⏳ Waiting for completion...`);
@@ -1270,6 +1305,8 @@ async function signupAndVerify() {
             captchaAttempts++;
             await fastDelay(5000);
         }
+
+        await recoverFromTransientError(page, browserId);
 
         // Wait for signup completion
         console.log(`[B-${browserId}] ⏳ Waiting for completion...`);
