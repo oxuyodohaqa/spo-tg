@@ -41,6 +41,84 @@ let userBrowserCount = 5;
 let userAccountTarget = 10;
 let userMode = 1; // 1 = signup only, 2 = signup + verify
 
+// Reusable browser fingerprints to keep each instance stable across attempts
+const fingerprints = new Map();
+
+function createFingerprint() {
+    const acceptLanguageOptions = [
+        'en-US,en;q=0.9',
+        'en-GB,en;q=0.9',
+        'en-CA,en;q=0.9'
+    ];
+
+    const timezoneOptions = [
+        'America/New_York',
+        'Europe/London',
+        'America/Chicago',
+        'Europe/Paris'
+    ];
+
+    const platformOptions = ['Win32', 'MacIntel', 'Linux x86_64'];
+    const hardwareOptions = [4, 6, 8, 10, 12];
+    const memoryOptions = [4, 8, 12, 16];
+
+    return {
+        userAgent: getRandomUserAgent(),
+        acceptLanguage: acceptLanguageOptions[Math.floor(Math.random() * acceptLanguageOptions.length)],
+        timezoneId: timezoneOptions[Math.floor(Math.random() * timezoneOptions.length)],
+        platform: platformOptions[Math.floor(Math.random() * platformOptions.length)],
+        hardwareConcurrency: hardwareOptions[Math.floor(Math.random() * hardwareOptions.length)],
+        deviceMemory: memoryOptions[Math.floor(Math.random() * memoryOptions.length)]
+    };
+}
+
+function getFingerprint(browserId) {
+    if (!fingerprints.has(browserId)) {
+        fingerprints.set(browserId, createFingerprint());
+    }
+
+    return fingerprints.get(browserId);
+}
+
+async function applyFingerprint(page, browserId) {
+    const fingerprint = getFingerprint(browserId);
+
+    await page.setUserAgent(fingerprint.userAgent);
+    await page.setExtraHTTPHeaders({
+        'Accept-Language': fingerprint.acceptLanguage
+    });
+
+    if (fingerprint.timezoneId) {
+        await page.emulateTimezone(fingerprint.timezoneId);
+    }
+
+    await page.evaluateOnNewDocument((fp) => {
+        const languages = fp.acceptLanguage.split(',').map((lang) => lang.split(';')[0]);
+
+        Object.defineProperty(navigator, 'platform', {
+            get: () => fp.platform
+        });
+
+        Object.defineProperty(navigator, 'hardwareConcurrency', {
+            get: () => fp.hardwareConcurrency
+        });
+
+        Object.defineProperty(navigator, 'deviceMemory', {
+            get: () => fp.deviceMemory
+        });
+
+        Object.defineProperty(navigator, 'language', {
+            get: () => languages[0]
+        });
+
+        Object.defineProperty(navigator, 'languages', {
+            get: () => languages
+        });
+    }, fingerprint);
+
+    console.log(`[B-${browserId}] 🎭 Fingerprint applied: ${fingerprint.userAgent} | ${fingerprint.acceptLanguage} | ${fingerprint.platform}`);
+}
+
 // Create readline interface for user input
 const rl = readline.createInterface({
     input: process.stdin,
@@ -473,6 +551,39 @@ async function handleCaptchaWithBuster(page, browserId, maxRetries = 5) {
     return false;
 }
 
+async function detectTransientError(page) {
+    try {
+        return await page.evaluate(() => {
+            const text = document.body.innerText.toLowerCase();
+            return text.includes('something went wrong') || text.includes('try again later');
+        });
+    } catch (error) {
+        return false;
+    }
+}
+
+async function recoverFromTransientError(page, browserId, maxRetries = 2) {
+    let detected = false;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const hasError = await detectTransientError(page);
+        if (!hasError) {
+            break;
+        }
+
+        detected = true;
+        console.log(`[B-${browserId}] ⚠️ 'Something went wrong' detected - retrying submit (${attempt}/${maxRetries})`);
+        await smartClickContinue(page, browserId, 8);
+        await fastDelay(2000);
+    }
+
+    if (detected) {
+        console.log(`[B-${browserId}] 🔄 Completed recovery attempts for transient error`);
+    }
+
+    return detected;
+}
+
 // ✅ STRICT STUDENT VERIFICATION - ONLY RETURNS TRUE ON ACTUAL SUCCESS
 async function verifyStudentAccount(page, browserId, verificationUrl, email, password) {
     try {
@@ -694,9 +805,7 @@ async function signupOnly() {
         console.log(`[B-${browserId}] 🚀 SIGNUP ONLY: ${email}`);
         
         const page = await browser.newPage();
-        
-        const userAgent = getRandomUserAgent();
-        await page.setUserAgent(userAgent);
+        await applyFingerprint(page, browserId);
         
         await page.evaluate((browserId) => {
             document.title = `🚀 Spotify-${browserId} - SIGNUP ONLY`;
@@ -907,7 +1016,7 @@ async function signupOnly() {
 
         while (captchaAttempts < maxCaptchaAttempts) {
             const captchaPresent = await page.evaluate(() => {
-                return document.querySelector('iframe[src*="recaptcha"]') || 
+                return document.querySelector('iframe[src*="recaptcha"]') ||
                        document.querySelector('iframe[title*="challenge"]');
             });
 
@@ -929,6 +1038,8 @@ async function signupOnly() {
             captchaAttempts++;
             await fastDelay(5000);
         }
+
+        await recoverFromTransientError(page, browserId);
 
         // Wait for signup completion
         console.log(`[B-${browserId}] ⏳ Waiting for completion...`);
@@ -1035,9 +1146,7 @@ async function signupAndVerify() {
         console.log(`[B-${browserId}] 🔗 Unique link assigned`);
         
         const page = await browser.newPage();
-        
-        const userAgent = getRandomUserAgent();
-        await page.setUserAgent(userAgent);
+        await applyFingerprint(page, browserId);
         
         await page.evaluate((browserId) => {
             document.title = `🚀 Spotify-${browserId} - SIGNUP + VERIFY`;
@@ -1270,6 +1379,8 @@ async function signupAndVerify() {
             captchaAttempts++;
             await fastDelay(5000);
         }
+
+        await recoverFromTransientError(page, browserId);
 
         // Wait for signup completion
         console.log(`[B-${browserId}] ⏳ Waiting for completion...`);
