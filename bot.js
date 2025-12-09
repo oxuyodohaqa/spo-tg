@@ -1364,18 +1364,25 @@ async function handleQuantityConfirm(query) {
         return;
     }
 
-    // Handle other products by simulating text input to existing handlers
+    // Handle other products by delegating to existing text handlers
+    // Map product codes to their quantity state names
+    const productToStateMap = {
+        'gpt_basic': 'gpt',
+        'capcut_basic': 'capcut',
+        'canva_business': 'canva_business',
+        'gpt_go': 'gpt_go',
+        'gpt_invite': 'gpt_invite',
+        'gpt_plus': 'gpt_plus',
+        'alight_motion': 'alight',
+        'perplexity_ai': 'perplexity',
+        'account': 'account'
+    };
+
+    const stateName = productToStateMap[picker.product] || 'unknown';
+
     // Set up the state for the text handler to process
     userStates[chatId] = {
-        state: `awaiting_${picker.product === 'gpt_basic' ? 'gpt' : 
-                         picker.product === 'capcut_basic' ? 'capcut' : 
-                         picker.product === 'canva_business' ? 'canva_business' :
-                         picker.product === 'gpt_go' ? 'gpt_go' :
-                         picker.product === 'gpt_invite' ? 'gpt_invite' :
-                         picker.product === 'gpt_plus' ? 'gpt_plus' :
-                         picker.product === 'alight_motion' ? 'alight' :
-                         picker.product === 'perplexity_ai' ? 'perplexity' :
-                         picker.product === 'account' ? 'account' : 'unknown'}_quantity`,
+        state: `awaiting_${stateName}_quantity`,
         payment_method: picker.payment_method || 'balance',
         userId: userId,
         user: query.from,
@@ -1383,7 +1390,8 @@ async function handleQuantityConfirm(query) {
         variant: picker.variant || 'nw'
     };
 
-    // Simulate the text message to trigger existing handler
+    // Trigger existing handler by emitting a message event with the quantity
+    // Note: This reuses existing tested order processing logic to avoid code duplication
     bot.emit('message', {
         chat: { id: chatId },
         from: query.from,
