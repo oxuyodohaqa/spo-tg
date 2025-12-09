@@ -1986,11 +1986,13 @@ async function deliverGptGoVcc(userId, orderId, quantity, pricePerCard = getGptG
         updateGptGoVccStock(stock.cards);
         notifyOutOfStockIfDepleted(previousCount, stock.cards.length, getProductLabel('gpt_go_vcc', 'GPT Go VCC'));
 
+        const productLabel = getProductLabel('gpt_go_vcc', 'GPT Go VCC');
         const cardsText = delivered.map(card => `• \`${escapeInlineCode(card)}\``).join('\n');
         const totalPrice = quantity * pricePerCard;
 
         const message =
             `✅ *GPT GO VCC DELIVERED!*\n\n` +
+            `📌 Product: ${productLabel}\n` +
             `📋 Order #: ${orderId}\n` +
             `🔢 Quantity: ${quantity}\n` +
             `💵 Total: Rp ${formatIDR(totalPrice)} (${formatIDR(pricePerCard)} each)\n\n` +
@@ -2006,7 +2008,7 @@ async function deliverGptGoVcc(userId, orderId, quantity, pricePerCard = getGptG
     }
 }
 
-async function deliverAirwallexVcc(userId, orderId, quantity, pricePerCard = getAirwallexVccPrice()) {
+async function deliverAirwallexVcc(userId, orderId, quantity, pricePerCard = getAirwallexVccPrice(), labelOverride = null) {
     try {
         const stock = getAirwallexVccStock();
         const previousCount = stock.cards ? stock.cards.length : 0;
@@ -2019,11 +2021,13 @@ async function deliverAirwallexVcc(userId, orderId, quantity, pricePerCard = get
         updateAirwallexVccStock(stock.cards);
         notifyOutOfStockIfDepleted(previousCount, stock.cards.length, getProductLabel('airwallex_vcc', 'Airwallex VCC'));
 
+        const productLabel = labelOverride || getProductLabel('airwallex_vcc', 'Airwallex VCC');
         const cardsText = delivered.map(card => `• \`${escapeInlineCode(card)}\``).join('\n');
         const totalPrice = quantity * pricePerCard;
 
         const message =
             `✅ *AIRWALLEX VCC DELIVERED!*\n\n` +
+            `📌 Type: ${productLabel}\n` +
             `📋 Order #: ${orderId}\n` +
             `🔢 Quantity: ${quantity}\n` +
             `💵 Total: Rp ${formatIDR(totalPrice)} (${formatIDR(pricePerCard)} each)\n\n` +
@@ -2115,6 +2119,683 @@ async function processGptGoVccQuantity(chatId, userId, quantity, paymentMethod, 
         updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
         updatedUsers[userId].completed_orders = (updatedUsers[userId].completed_orders || 0) + 1;
         saveJSON(USERS_FILE, updatedUsers);
+
+        const delivery = await deliverGptGoVcc(userId, orderId, qty, unitPrice);
+        const newBalance = getBalance(userId);
+
+        if (delivery.success) {
+            bot.sendMessage(
+                chatId,
+                `✅ *GPT GO VCC PURCHASED!*\n\n` +
+                `📋 Order: #${orderId}\n` +
+                `🔢 Quantity: ${qty}\n` +
+                `💵 Paid: Rp ${formatIDR(totalPrice)}\n` +
+                `💳 Balance left: Rp ${formatIDR(newBalance)}\n\n` +
+                `💳 Cards sent above.`,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
+                        ]
+                    }
+                }
+            ).catch(() => {});
+
+            bot.sendMessage(ADMIN_TELEGRAM_ID,
+                `🆕 *GPT GO VCC SALE*\n\n` +
+                `User: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')} (${userId})\n` +
+                `Order: #${orderId}\n` +
+                `Qty: ${qty}\n` +
+                `Total: Rp ${formatIDR(totalPrice)}\n` +
+                `Remaining GPT Go VCC: ${(getGptGoVccStock().cards || []).length}`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        } else {
+            bot.sendMessage(chatId, delivery.message || '❌ Failed to deliver cards.').catch(() => {});
+            updateBalance(userId, totalPrice);
+        }
+    } else {
+        const orderId = getNextOrderId();
+
+        const order = {
+            order_id: orderId,
+            user_id: userId,
+            username: users[userId]?.username || fromUser?.username || 'unknown',
+            quantity: qty,
+            total_quantity: qty,
+            original_price: unitPrice,
+            total_price: totalPrice,
+            status: 'awaiting_payment',
+            payment_method: 'qris',
+            date: new Date().toISOString(),
+            product: 'gpt_go_vcc'
+        };
+
+        addOrder(order);
+
+        if (!users[userId]) {
+            addUser(userId, fromUser || {});
+        }
+
+        const orderMessage =
+            `🧾 *ORDER SUMMARY*\n\n` +
+            `🆔 Order ID: #${orderId}\n` +
+            `📌 Product: GPT Go VCC\n` +
+            `🔢 Quantity: ${qty}\n` +
+            `💰 Total: Rp ${formatIDR(totalPrice)}\n` +
+            `💳 Payment: QRIS/Gopay\n` +
+            `📦 Status: Awaiting Payment\n`;
+
+        const gopay = getQRIS();
+        if (gopay.file_id) {
+            bot.sendPhoto(chatId, gopay.file_id, {
+                caption:
+                    `📱 *PAYMENT METHOD - GOPAY/QRIS*\n\n` +
+                    `Scan this QR code to pay\n` +
+                    `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                    `After payment, send screenshot with:\n` +
+                    `Caption: #${orderId}\n\n` +
+                    `⏰ Order expires in ${ORDER_EXPIRY_MINUTES} minutes`,
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '📱 DM Admin @itsmeaab', url: 'https://t.me/itsmeaab' }]
+                    ]
+                }
+            }).catch(() => {});
+        } else {
+            bot.sendMessage(chatId,
+                `📱 *PAYMENT INSTRUCTIONS*\n\n` +
+                `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                `Contact admin for payment details:`,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '📱 DM Admin @itsmeaab', url: 'https://t.me/itsmeaab' }]
+                        ]
+                    }
+                }
+            ).catch(() => {});
+        }
+
+        bot.sendMessage(chatId, orderMessage, {
+            parse_mode: 'Markdown'
+        }).catch(() => {});
+
+        bot.sendMessage(ADMIN_TELEGRAM_ID,
+            `📝 *NEW GPT GO VCC ORDER*\n\n` +
+            `Order ID: #${orderId}\n` +
+            `Customer: @${escapeMarkdown(users[userId]?.username || fromUser?.username || 'unknown')}\n` +
+            `User ID: ${userId}\n` +
+            `Quantity: ${qty} card(s)\n` +
+            `💰 Total: Rp ${formatIDR(totalPrice)}\n` +
+            `Status: Awaiting Payment\n\n` +
+            `💡 Waiting for payment proof...`,
+            { parse_mode: 'Markdown' }
+        ).catch(() => {});
+    }
+
+    delete userStates[chatId];
+}
+
+async function processAirwallexVccQuantity(chatId, userId, quantity, paymentMethod, variantId, variantLabel, variantPrice, fromUser) {
+    const vccStock = getAirwallexVccStock();
+    const available = vccStock.cards?.length || 0;
+    const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+    const qty = Math.max(1, Math.min(quantity || 1, maxQuantity));
+    const variant = variantId ? getAirwallexVccVariant(variantId) : null;
+    const label = variant?.label || variantLabel || getProductLabel('airwallex_vcc', 'Airwallex VCC');
+    const unitPrice = variantPrice || variant?.price || getAirwallexVccPrice();
+    const totalPrice = qty * unitPrice;
+    const users = getUsers();
+
+    if (available === 0) {
+        bot.sendMessage(chatId, `❌ Airwallex VCC is out of stock. Contact ${ADMIN_USERNAME} for restock.`, {
+            reply_markup: {
+                inline_keyboard: [[{ text: `📱 DM ${ADMIN_USERNAME}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }]]
+            }
+        }).catch(() => {});
+        delete userStates[chatId];
+        return;
+    }
+
+    if (quantity !== qty) {
+        bot.sendMessage(chatId, `⚠️ You can order up to ${maxQuantity} card(s). Quantity set to ${qty}.`).catch(() => {});
+    }
+
+    if (paymentMethod === 'balance') {
+        const balance = getBalance(userId);
+
+        if (balance < totalPrice) {
+            const shortfall = totalPrice - balance;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '💵 Top Up via QRIS', callback_data: 'topup_balance' }],
+                    [{ text: '🔙 Back', callback_data: 'menu_vcc' }]
+                ]
+            };
+
+            bot.sendMessage(chatId,
+                `⚠️ Balance not enough.\n\n` +
+                `Requested: ${qty} Airwallex VCC card(s)\n` +
+                `Total needed: Rp ${formatIDR(totalPrice)}\n` +
+                `Current balance: Rp ${formatIDR(balance)}\n` +
+                `Shortfall: Rp ${formatIDR(shortfall)}\n\n` +
+                `Top up with QRIS then try again.`,
+                { parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+            return;
+        }
+
+        updateBalance(userId, -totalPrice);
+
+        const orderId = getNextOrderId();
+        const order = {
+            order_id: orderId,
+            user_id: userId,
+            username: users[userId]?.username || fromUser?.username || 'unknown',
+            quantity: qty,
+            total_quantity: qty,
+            original_price: unitPrice,
+            total_price: totalPrice,
+            status: 'completed',
+            payment_method: 'balance',
+            date: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            product: 'airwallex_vcc',
+            variant_id: variantId || null,
+            variant_label: label
+        };
+
+        addOrder(order);
+
+        if (!users[userId]) {
+            addUser(userId, fromUser || {});
+        }
+
+        const updatedUsers = getUsers();
+        updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+        updatedUsers[userId].completed_orders = (updatedUsers[userId].completed_orders || 0) + 1;
+        saveJSON(USERS_FILE, updatedUsers);
+
+        const delivery = await deliverAirwallexVcc(userId, orderId, qty, unitPrice, label);
+        const newBalance = getBalance(userId);
+
+        if (delivery.success) {
+            bot.sendMessage(
+                chatId,
+                `✅ *AIRWALLEX VCC PURCHASED!*\n\n` +
+                `📋 Order: #${orderId}\n` +
+                `🎯 Type: ${label}\n` +
+                `🔢 Quantity: ${qty}\n` +
+                `💵 Paid: Rp ${formatIDR(totalPrice)}\n` +
+                `💳 Balance left: Rp ${formatIDR(newBalance)}\n\n` +
+                `💳 Cards sent above.`,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
+                        ]
+                    }
+                }
+            ).catch(() => {});
+
+            bot.sendMessage(ADMIN_TELEGRAM_ID,
+                `🆕 *AIRWALLEX VCC SALE*\n\n` +
+                `User: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')} (${userId})\n` +
+                `Order: #${orderId}\n` +
+                `Variant: ${label}\n` +
+                `Qty: ${qty}\n` +
+                `Total: Rp ${formatIDR(totalPrice)}\n` +
+                `Remaining Airwallex VCC: ${(getAirwallexVccStock().cards || []).length}`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        } else {
+            bot.sendMessage(chatId, delivery.message || '❌ Failed to deliver cards.').catch(() => {});
+            updateBalance(userId, totalPrice);
+        }
+    } else {
+        const orderId = getNextOrderId();
+
+        const order = {
+            order_id: orderId,
+            user_id: userId,
+            username: users[userId]?.username || fromUser?.username || 'unknown',
+            quantity: qty,
+            total_quantity: qty,
+            original_price: unitPrice,
+            total_price: totalPrice,
+            status: 'awaiting_payment',
+            payment_method: 'qris',
+            date: new Date().toISOString(),
+            product: 'airwallex_vcc',
+            variant_id: variantId || null,
+            variant_label: label
+        };
+
+        addOrder(order);
+
+        if (!users[userId]) {
+            addUser(userId, fromUser || {});
+        }
+
+        const orderMessage =
+            `🧾 *ORDER SUMMARY*\n\n` +
+            `🆔 Order ID: #${orderId}\n` +
+            `📌 Product: ${label}\n` +
+            `🔢 Quantity: ${qty}\n` +
+            `💰 Total: Rp ${formatIDR(totalPrice)}\n` +
+            `💳 Payment: QRIS/Gopay\n` +
+            `📦 Status: Awaiting Payment\n`;
+
+        const gopay = getQRIS();
+        if (gopay.file_id) {
+            bot.sendPhoto(chatId, gopay.file_id, {
+                caption:
+                    `📱 *PAYMENT METHOD - GOPAY/QRIS*\n\n` +
+                    `Scan this QR code to pay\n` +
+                    `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                    `After payment, send screenshot with:\n` +
+                    `Caption: #${orderId}\n\n` +
+                    `⏰ Order expires in ${ORDER_EXPIRY_MINUTES} minutes`,
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '📱 DM Admin @itsmeaab', url: 'https://t.me/itsmeaab' }]
+                    ]
+                }
+            }).catch(() => {});
+        } else {
+            bot.sendMessage(chatId,
+                `📱 *PAYMENT INSTRUCTIONS*\n\n` +
+                `💰 Amount: *Rp ${formatIDR(totalPrice)}*\n\n` +
+                `Contact admin for payment details:`,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '📱 DM Admin @itsmeaab', url: 'https://t.me/itsmeaab' }]
+                        ]
+                    }
+                }
+            ).catch(() => {});
+        }
+
+        bot.sendMessage(chatId, orderMessage, {
+            parse_mode: 'Markdown'
+        }).catch(() => {});
+
+        bot.sendMessage(ADMIN_TELEGRAM_ID,
+            `📝 *NEW AIRWALLEX VCC ORDER*\n\n` +
+            `Order ID: #${orderId}\n` +
+            `Customer: @${escapeMarkdown(users[userId]?.username || fromUser?.username || 'unknown')}\n` +
+            `User ID: ${userId}\n` +
+            `Variant: ${label}\n` +
+            `Quantity: ${qty} card(s)\n` +
+            `💰 Total: Rp ${formatIDR(totalPrice)}\n` +
+            `Status: Awaiting Payment\n\n` +
+            `💡 Waiting for payment proof...`,
+            { parse_mode: 'Markdown' }
+        ).catch(() => {});
+    }
+
+    delete userStates[chatId];
+}
+
+async function deliverGptPlus(userId, orderId, quantity, variant = 'nw', pricePerAccount = getGptPlusPrice(variant)) {
+    try {
+        const stock = getGptPlusStock();
+
+        const previousCount = stock.accounts ? stock.accounts.length : 0;
+
+        if (!stock.accounts || stock.accounts.length < quantity) {
+            return { success: false, message: '❌ Not enough GPT Plus accounts available to deliver!' };
+        }
+
+        const delivered = stock.accounts.splice(0, quantity);
+        updateGptPlusStock(stock.accounts);
+        notifyOutOfStockIfDepleted(previousCount, stock.accounts.length, getProductLabel('gpt_plus', 'GPT Plus Accounts'));
+
+        const credentials = delivered
+            .map(acc => `• \`${escapeInlineCode(acc)}\``)
+            .join('\n');
+
+        const totalPrice = quantity * pricePerAccount;
+
+        const message =
+            `✅ *GPT PLUS DELIVERED!*\n\n` +
+            `📋 Order #: ${orderId}\n` +
+            `🔢 Quantity: ${quantity}\n` +
+            `🛡️ Warranty: ${formatGptPlusVariantLabel(variant)}\n` +
+            `💵 Total: Rp ${formatIDR(totalPrice)} (${formatIDR(pricePerAccount)} each)\n\n` +
+            `🔑 Credentials:\n${credentials}\n\n` +
+            `📱 Support: ${ADMIN_USERNAME}`;
+
+        await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
+
+        return { success: true, delivered };
+    } catch (error) {
+        console.error('Error delivering GPT Plus:', error.message);
+        return { success: false, message: '❌ Failed to deliver GPT Plus account(s).' };
+    }
+}
+
+async function deliverAlightMotion(userId, orderId, quantity, pricePerAccount = getAlightUnitPrice(quantity)) {
+    try {
+        const stock = getAlightMotionStock();
+
+        const previousCount = stock.accounts ? stock.accounts.length : 0;
+
+        if (!stock.accounts || stock.accounts.length < quantity) {
+            return { success: false, message: '❌ Not enough Alight Motion accounts available to deliver!' };
+        }
+
+        const delivered = stock.accounts.splice(0, quantity);
+        updateAlightMotionStock(stock.accounts);
+        notifyOutOfStockIfDepleted(previousCount, stock.accounts.length, getProductLabel('alight_motion', 'Alight Motion Accounts'));
+
+        const credentials = delivered
+            .map(acc => `• \`${escapeMarkdown(acc)}\``)
+            .join('\n');
+
+        const totalPrice = quantity * pricePerAccount;
+
+        const message =
+            `✅ *ALIGHT MOTION DELIVERED!*\n\n` +
+            `📋 Order #: ${orderId}\n` +
+            `🔢 Quantity: ${quantity}\n` +
+            `💵 Total: Rp ${formatIDR(totalPrice)} (${formatIDR(pricePerAccount)} each)\n\n` +
+            `🔑 Credentials:\n${credentials}\n\n` +
+            `📱 Support: ${ADMIN_USERNAME}`;
+
+        await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
+
+        return { success: true, delivered };
+    } catch (error) {
+        console.error('Error delivering Alight Motion:', error.message);
+        return { success: false, message: '❌ Failed to deliver Alight Motion account(s).' };
+    }
+}
+
+async function deliverPerplexity(userId, orderId, quantity, pricePerAccount = getPerplexityUnitPrice(quantity)) {
+    try {
+        const stock = getPerplexityStock();
+
+        const previousCount = stock.links ? stock.links.length : 0;
+
+        if (!stock.links || stock.links.length < quantity) {
+            return { success: false, message: '❌ Not enough Perplexity AI links available to deliver!' };
+        }
+
+        const delivered = stock.links.splice(0, quantity);
+        updatePerplexityStock(stock.links);
+        notifyOutOfStockIfDepleted(previousCount, stock.links.length, getProductLabel('perplexity', 'Perplexity AI Links'));
+
+        const credentials = delivered
+            .map(link => `• ${escapeMarkdown(link)}`)
+            .join('\n');
+
+        const totalPrice = quantity * pricePerAccount;
+
+        const message =
+            `✅ *PERPLEXITY AI DELIVERED!*\n\n` +
+            `📋 Order #: ${orderId}\n` +
+            `🔢 Quantity: ${quantity}\n` +
+            `💵 Total: Rp ${formatIDR(totalPrice)} (${formatIDR(pricePerAccount)} each)\n\n` +
+            `🔗 Links:\n${credentials}\n\n` +
+            `📱 Support: ${ADMIN_USERNAME}`;
+
+        await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
+
+        return { success: true, delivered };
+    } catch (error) {
+        console.error('Error delivering Perplexity AI:', error.message);
+        return { success: false, message: '❌ Failed to deliver Perplexity AI link(s).' };
+    }
+}
+
+function broadcastToAll(message, options = {}) {
+    const users = getUsers();
+    const userIds = Object.keys(users).filter(id => parseInt(id) !== ADMIN_TELEGRAM_ID);
+    
+    let success = 0;
+    let failed = 0;
+    
+    const promises = userIds.map(userId => {
+        return bot.sendMessage(userId, message, options)
+            .then(() => { success++; })
+            .catch(() => { failed++; });
+    });
+    
+    return Promise.all(promises).then(() => ({ success, failed, total: userIds.length }));
+}
+
+function broadcastNewCoupon(couponData) {
+    const message =
+        `🎉 *NEW COUPON AVAILABLE!*\n\n` +
+        `🎟️ Code: *${couponData.code}*\n` +
+        `💰 Discount: *${couponData.discount_percent}% OFF*\n` +
+        `📦 Min Order: ${couponData.min_order} links\n` +
+        `${couponData.first_order_only ? '⭐ First-time customers only\n' : ''}` +
+        `${couponData.max_uses ? `🔢 Limited to ${couponData.max_uses} uses\n` : '🔢 Unlimited uses\n'}` +
+        `${couponData.expires_at ? `⏰ Valid until: ${new Date(couponData.expires_at).toLocaleString('id-ID')}\n` : ''}` +
+        `\n💡 Use this code when placing your order to get instant discount!\n\n` +
+        `📱 Order now: /start`;
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastAccountRestock(addedCount, totalCount) {
+    const message = [
+        '🎉 *VERIFIED ACCOUNTS RESTOCKED!*',
+        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
+        `🔑 Total Stock: *${totalCount}* ready to claim`,
+        '',
+        `💵 Price: Rp ${formatIDR(getAccountPrice())} (no bulk)`,
+        '📥 Access inbox via https://generator.email/',
+        '',
+        '⚡ Grab yours now before they sell out!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastGptBasicsRestock(addedCount, totalCount) {
+    const message = [
+        '🤖 *GPT BASICS ACCOUNTS RESTOCKED!*',
+        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
+        `🔑 Total Stock: *${totalCount}* ready to claim`,
+        '',
+        `💵 Price: Rp ${formatIDR(getGptBasicsPrice())} (no bulk)`,
+        '⚡ Order now before stock runs out!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastCapcutBasicsRestock(addedCount, totalCount) {
+    const message = [
+        '🎞️ *CAPCUT BASICS RESTOCKED!*',
+        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
+        `🔑 Total Stock: *${totalCount}* ready to claim`,
+        '',
+        `💵 Price: Rp ${formatIDR(getCapcutBasicsPrice())} (no bulk)`,
+        '📥 Access via generator.email or temp-mail.io',
+        '⚡ Order now before stock runs out!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastCanvaBusinessRestock(addedCount, totalCount) {
+    const message = [
+        '🎨 *CANVA BUSINESS RESTOCKED!*',
+        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
+        `🖌️ Total Stock: *${totalCount}* ready to claim`,
+        '',
+        `💵 Price: ${formatCanvaBusinessPriceSummary()}`,
+        '⚡ Order now before stock runs out!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastGptInviteRestock(addedCount, totalCount) {
+    const message = [
+        '📩 *GPT VIA INVITE RESTOCKED!*',
+        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
+        `📨 Total Stock: *${totalCount}* ready to claim`,
+        '',
+        `💵 Price: Rp ${formatIDR(getGptInvitePrice())} (no bulk)`,
+        '⚡ Order now before stock runs out!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastGptGoRestock(addedCount, totalCount) {
+    const message = [
+        '🚀 *GPT GO RESTOCKED!*',
+        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
+        `🧠 Total Stock: *${totalCount}* ready to claim`,
+        '',
+        `💵 Price: ${formatGptGoPriceSummary()}`,
+        '⚡ Order now before stock runs out!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastGptPlusRestock(addedCount, totalCount) {
+    const message = [
+        '✨ *GPT PLUS RESTOCKED!*',
+        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
+        `💫 Total Stock: *${totalCount}* ready to claim`,
+        '',
+        `💵 Prices: ${formatGptPlusPriceSummary()}`,
+        '⚡ Order now before stock runs out!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastAlightRestock(addedCount, totalCount) {
+    const message = [
+        '🎬 *ALIGHT MOTION RESTOCKED!*',
+        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
+        `🎥 Total Stock: *${totalCount}* ready to claim`,
+        '',
+        `💵 Price: ${formatAlightPriceSummary()}`,
+        '⚡ Grab yours now!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastPerplexityRestock(addedCount, totalCount) {
+    const message = [
+        '🧠 *PERPLEXITY LINKS RESTOCKED!*',
+        `📤 Added: *${addedCount}* link${addedCount > 1 ? 's' : ''}`,
+        `🔗 Total Stock: *${totalCount}* ready to claim`,
+        '',
+        `💵 Price: ${formatPerplexityPriceSummary()}`,
+        '⚡ Order now before stock runs out!'
+    ].join('\n');
+
+            bot.sendMessage(chatId,
+                `⚠️ Balance not enough.\n\n` +
+                `Requested: ${qty} GPT Go VCC card(s)\n` +
+                `Total needed: Rp ${formatIDR(totalPrice)}\n` +
+                `Current balance: Rp ${formatIDR(balance)}\n` +
+                `Shortfall: Rp ${formatIDR(shortfall)}\n\n` +
+                `Top up with QRIS then try again.`,
+                { parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+            return;
+        }
+
+function broadcastGptGoVccRestock(addedCount, totalCount) {
+    const message = [
+        '💳 *GPT GO VCC RESTOCKED!*',
+        `📤 Added: *${addedCount}* card${addedCount > 1 ? 's' : ''}`,
+        `🚀 Total Cards: *${totalCount}* ready for delivery`,
+        '',
+        '💬 DM admin for QRIS payment and card drop.',
+        '⚡ Limited VCC stock—act fast!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastAirwallexVccRestock(addedCount, totalCount) {
+    const message = [
+        '🌐 *AIRWALLEX VCC RESTOCKED!*',
+        `📤 Added: *${addedCount}* card${addedCount > 1 ? 's' : ''}`,
+        `💳 Total Cards: *${totalCount}* ready for delivery`,
+        '',
+        '💬 DM admin for QRIS payment and card drop.',
+        '⚡ Grab an Airwallex card before stock runs out!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastRestock(addedCount = 0, newTotal = 0) {
+    const pricing = getPricing();
+    const pricingText = Object.keys(pricing).slice(0, 4).map(range =>
+        `• ${range}: Rp ${formatIDR(pricing[range])}/account`
+    ).join('\n');
+
+        const orderId = getNextOrderId();
+        const order = {
+            order_id: orderId,
+            user_id: userId,
+            username: users[userId]?.username || fromUser?.username || 'unknown',
+            quantity: qty,
+            total_quantity: qty,
+            original_price: unitPrice,
+            total_price: totalPrice,
+            status: 'completed',
+            payment_method: 'balance',
+            date: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            product: 'gpt_go_vcc'
+        };
+
+    const productLines = [
+        `🎵 Spotify Links: *${totalLinks}*`,
+        `🔑 ${escapeMarkdown(getProductLabel('account', 'Spotify Verified Accounts'))}: *${(getAccountStock().accounts || []).length}*`,
+        `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics Accounts'))}: *${(getGptBasicsStock().accounts || []).length}*`,
+        `🎞️ ${escapeMarkdown(getProductLabel('capcut_basic', 'CapCut Basics Accounts'))}: *${(getCapcutBasicsStock().accounts || []).length}*`,
+        `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite Accounts'))}: *${(getGptInviteStock().accounts || []).length}*`,
+        `🚀 ${escapeMarkdown(getProductLabel('gpt_go', 'GPT Go Plan Accounts'))}: *${(getGptGoStock().accounts || []).length}*`,
+        `✨ ${escapeMarkdown(getProductLabel('gpt_plus', 'GPT Plus Plan Accounts'))}: *${(getGptPlusStock().accounts || []).length}*`,
+        `💳 GPT Go VCC Cards: *${(getGptGoVccStock().cards || []).length}*`,
+        `🌐 Airwallex VCC Cards: *${(getAirwallexVccStock().cards || []).length}*`,
+        `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Accounts'))}: *${(getAlightMotionStock().accounts || []).length}*`,
+        `🧠 Perplexity Links: *${(getPerplexityStock().links || []).length}*`
+    ].join('\n');
+
+        if (!users[userId]) {
+            addUser(userId, fromUser || {});
+        }
+
+    const message =
+        `📦 *STOCK RESTOCKED!*\n\n` +
+        addedText +
+        `📊 *Available Stock:*\n${productLines}\n\n` +
+        `💰 *Current Pricing:*\n` +
+        `${pricingText}\n\n` +
+        `${couponText}` +
+        `⚡ Instant delivery after payment\n\n` +
+        `Order now: /start`;
+    
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
 
         const delivery = await deliverGptGoVcc(userId, orderId, qty, unitPrice);
         const newBalance = getBalance(userId);
@@ -7398,48 +8079,49 @@ bot.on('callback_query', async (query) => {
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
-
-        else if (data === 'buy_alight_motion') {
-            const alightStock = getAlightMotionStock();
-            const available = alightStock.accounts?.length || 0;
-            const pricing = getAlightPricing();
-
-            const keyboard = {
-                inline_keyboard: [
-                    [{ text: `1x - Rp ${formatIDR(pricing.single)}`, callback_data: 'choose_alight_1' }],
-                    [{ text: `5 pcs - Rp ${formatIDR(pricing.pack5)}`, callback_data: 'choose_alight_5' }],
-                    [{ text: `50 pcs - Rp ${formatIDR(pricing.pack50)}`, callback_data: 'choose_alight_50' }],
-                    [{ text: '✏️ Custom Quantity', callback_data: 'choose_alight_custom' }],
-                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
-                ]
-            };
-
-            bot.editMessageText(
-                `🎬 *BUY ALIGHT MOTION*\n\n` +
-                `💵 Packages: ${formatAlightPriceSummary()}\n` +
-                `📦 Accounts available: ${available}\n\n` +
-                `✅ Pick a package or choose custom quantity.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
-        }
-
-        else if (data === 'check_gpt_go_vcc_stock') {
-            if (!isAdmin(userId)) return;
-
-            const gptGoVccStock = getGptGoVccStock();
-            const available = gptGoVccStock.cards?.length || 0;
-
-            bot.answerCallbackQuery(query.id, {
-                text: `📦 GPT Go VCC available: ${available}`,
-                show_alert: true
-            }).catch(() => {});
-        }
-
-        else if (data === 'upload_canva_business_instruction') {
-            if (!isAdmin(userId)) return;
-
-            userStates[chatId] = { state: 'awaiting_canva_business_upload' };
-
+        
+        const balance = getBalance(userId);
+        const stock = getStock();
+        const accountStock = getAccountStock();
+        const gptStock = getGptBasicsStock();
+        const capcutStock = getCapcutBasicsStock();
+        const gptInviteStock = getGptInviteStock();
+        const gptGoStock = getGptGoStock();
+        const gptPlusStock = getGptPlusStock();
+        const canvaStock = getCanvaBusinessStock();
+        const alightStock = getAlightMotionStock();
+        const perplexityStock = getPerplexityStock();
+        const accountAvailable = accountStock.accounts?.length || 0;
+        const gptAvailable = gptStock.accounts?.length || 0;
+        const capcutAvailable = capcutStock.accounts?.length || 0;
+        const gptInviteAvailable = gptInviteStock.accounts?.length || 0;
+        const gptGoAvailable = gptGoStock.accounts?.length || 0;
+        const gptPlusAvailable = gptPlusStock.accounts?.length || 0;
+        const canvaAvailable = canvaStock.accounts?.length || 0;
+        const alightAvailable = alightStock.accounts?.length || 0;
+        const perplexityAvailable = perplexityStock.links?.length || 0;
+        const linkAvailable = stock.links?.length || 0;
+        const pricing = getPricing();
+        const pricingText = Object.keys(pricing).slice(0, 3).map(range =>
+            `• ${range}: Rp ${formatIDR(pricing[range])}`
+        ).join('\n');
+        
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
+                [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
+                [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
+                [{ text: '💳 VCC Store', callback_data: 'menu_vcc' }],
+                [{ text: `🎞️ ${getProductLabel('capcut_basic', 'CapCut Basics')} (Rp ${formatIDR(getCapcutBasicsPrice())})`, callback_data: 'buy_capcut_basics' }],
+                [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
+                [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
+                [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
+                [{ text: '📦 Stock', callback_data: 'check_stock' }],
+                [{ text: '📝 My Orders', callback_data: 'my_orders' }],
+                [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
+            ]
+        };
+        
             bot.sendMessage(chatId,
                 `🎉 *Welcome to Spotify Store!*\n\n` +
                 `Hi ${escapeMarkdown(user.first_name)}! 👋\n\n` +
@@ -7650,8 +8332,6 @@ bot.on('callback_query', async (query) => {
                                                         ? 'Perplexity'
                                                         : (order?.product || order?.type || 'Items');
 
-            userStates[chatId] = { state: 'awaiting_gpt_go_vcc_upload' };
-
             bot.sendMessage(chatId,
                 `📤 *UPLOAD GPT GO VCC*\\n\\n` +
                 `Send a .txt file now with one card per line.\\n\\n` +
@@ -7845,6 +8525,27 @@ bot.on('callback_query', async (query) => {
 
                                 delete userStates[chatId];
                                 return;
+                            } else if (isCanvaBusinessUpload) {
+                                const canvaStock = getCanvaBusinessStock();
+                                const merged = [...(canvaStock.accounts || []), ...lines];
+                                updateCanvaBusinessStock(merged);
+
+                                broadcastCanvaBusinessRestock(lines.length, merged.length).catch(() => {});
+
+                                bot.editMessageText(
+                                    `✅ *CANVA BUSINESS UPLOADED!*\\n\\n` +
+                                    `📤 Added: ${lines.length} accounts\\n` +
+                                    `🎨 Total Canva Business: ${merged.length}\\n\\n` +
+                                    `Thank you!`,
+                                    {
+                                        chat_id: chatId,
+                                        message_id: statusMsg.message_id,
+                                        parse_mode: 'Markdown'
+                                    }
+                                ).catch(() => {});
+
+                                delete userStates[chatId];
+                                return;
                             } else if (isGptInviteUpload) {
                                 const gptInviteStock = getGptInviteStock();
                                 const merged = [...(gptInviteStock.accounts || []), ...lines];
@@ -7896,6 +8597,48 @@ bot.on('callback_query', async (query) => {
             };
 
             addOrder(order);
+
+                                delete userStates[chatId];
+                                return;
+                            } else if (isGptGoVccUpload) {
+                                const gptGoVccStock = getGptGoVccStock();
+                                const merged = [...(gptGoVccStock.cards || []), ...lines];
+                                updateGptGoVccStock(merged);
+
+                                broadcastGptGoVccRestock(lines.length, merged.length).catch(() => {});
+
+                                bot.editMessageText(
+                                    `✅ *GPT GO VCC UPLOADED!*\\n\\n` +
+                                    `📤 Added: ${lines.length} cards\\n` +
+                                    `💳 Total GPT Go VCC: ${merged.length}\\n\\n` +
+                                    `Thank you!`,
+                                    {
+                                        chat_id: chatId,
+                                        message_id: statusMsg.message_id,
+                                        parse_mode: 'Markdown'
+                                    }
+                                ).catch(() => {});
+
+                                delete userStates[chatId];
+                                return;
+                            } else if (isAirwallexVccUpload) {
+                                const airwallexVccStock = getAirwallexVccStock();
+                                const merged = [...(airwallexVccStock.cards || []), ...lines];
+                                updateAirwallexVccStock(merged);
+
+                                broadcastAirwallexVccRestock(lines.length, merged.length).catch(() => {});
+
+                                bot.editMessageText(
+                                    `✅ *AIRWALLEX VCC UPLOADED!*\\n\\n` +
+                                    `📤 Added: ${lines.length} cards\\n` +
+                                    `🌐 Total Airwallex VCC: ${merged.length}\\n\\n` +
+                                    `Thank you!`,
+                                    {
+                                        chat_id: chatId,
+                                        message_id: statusMsg.message_id,
+                                        parse_mode: 'Markdown'
+                                    }
+                                ).catch(() => {});
 
                                 delete userStates[chatId];
                                 return;
@@ -8177,7 +8920,8 @@ async function handlePaymentVerification(query) {
             delivered = result.success;
         } else if (isAirwallexVcc) {
             const unitPrice = order.original_price || getAirwallexVccPrice();
-            const result = await deliverAirwallexVcc(order.user_id, orderId, order.quantity, unitPrice);
+            const variantLabel = order.variant_label || getAirwallexVccVariant(order.variant_id)?.label || getProductLabel('airwallex_vcc', 'Airwallex VCC');
+            const result = await deliverAirwallexVcc(order.user_id, orderId, order.quantity, unitPrice, variantLabel);
             delivered = result.success;
         } else if (isGptPlus) {
             const result = await deliverGptPlus(order.user_id, orderId, order.quantity, order.variant || 'nw');
@@ -8349,11 +9093,10 @@ async function handlePaymentVerification(query) {
     }
 }
 
-bot.on('callback_query', async (query) => {
+async function handlePaymentVerification(query) {
     try {
         const chatId = query.message.chat.id;
         const messageId = query.message.message_id;
-        const data = query.data;
         const userId = query.from.id;
 
         bot.answerCallbackQuery(query.id).catch(() => {});
@@ -8381,29 +9124,179 @@ bot.on('callback_query', async (query) => {
         // ===== TOP-UP APPROVAL/REJECTION BUTTONS =====
         if (data.startsWith('approve_topup_')) {
             if (!isAdmin(userId)) return;
+            
+            const topupId = parseInt(data.replace('approve_topup_', ''));
+            const topups = getTopups();
+            const topup = topups.find(t => t.topup_id === topupId);
+            
+            if (!topup) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ Top-up not found!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+            
+            if (topup.status !== 'pending') {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ Top-up already processed!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+        ).catch(() => {});
 
-            const gptGoVccStock = getGptGoVccStock();
-            const available = gptGoVccStock.cards?.length || 0;
+        let delivered = false;
+        let deliveryFailedReason = null;
 
-            bot.answerCallbackQuery(query.id, {
-                text: `📦 GPT Go VCC available: ${available}`,
-                show_alert: true
-            }).catch(() => {});
+        if (isAccountOrder) {
+            const result = await deliverAccounts(order.user_id, orderId, order.quantity);
+            delivered = result.success;
+        } else if (isGptOrder) {
+            const result = await deliverGptBasics(order.user_id, orderId, order.quantity);
+            delivered = result.success;
+        } else if (isCapcut) {
+            const result = await deliverCapcutBasics(order.user_id, orderId, order.quantity);
+            delivered = result.success;
+        } else if (isGptInvite) {
+            const result = await deliverGptInvite(order.user_id, orderId, order.quantity);
+            delivered = result.success;
+        } else if (isGptGo) {
+            const result = await deliverGptGo(order.user_id, orderId, order.quantity);
+            delivered = result.success;
+        } else if (isGptGoVcc) {
+            const result = await deliverGptGoVcc(order.user_id, orderId, order.quantity, order.original_price || getGptGoVccPrice());
+            delivered = result.success;
+        } else if (isAirwallexVcc) {
+            const unitPrice = order.original_price || getAirwallexVccPrice();
+            const result = await deliverAirwallexVcc(order.user_id, orderId, order.quantity, unitPrice);
+            delivered = result.success;
+        } else if (isGptPlus) {
+            const result = await deliverGptPlus(order.user_id, orderId, order.quantity, order.variant || 'nw');
+            delivered = result.success;
+        } else if (isCanvaBusiness) {
+            const result = await deliverCanvaBusiness(order.user_id, orderId, order.quantity);
+            delivered = result.success;
+        } else if (isAlight) {
+            const result = await deliverAlightMotion(order.user_id, orderId, order.quantity);
+            delivered = result.success;
+        } else if (isPerplexity) {
+            const result = await deliverPerplexity(order.user_id, orderId, order.quantity);
+            delivered = result.success;
+        } else if (treatAsLinkOrder) {
+            delivered = await deliverlinks(order.user_id, orderId, order.quantity, order.bonus_quantity || 0);
+        } else {
+            deliveryFailedReason = 'unknown_product';
         }
 
-        else if (data === 'check_airwallex_vcc_stock') {
+        if (delivered) {
+            updateOrder(orderId, {
+                status: 'completed',
+                completed_at: new Date().toISOString(),
+                verified_by: userId
+            });
+
+            const users = getUsers();
+            if (users[order.user_id]) {
+                users[order.user_id].completed_orders = (users[order.user_id].completed_orders || 0) + 1;
+                saveJSON(USERS_FILE, users);
+            }
+
+            removePendingPayment(order.user_id, orderId);
+
+            bot.editMessageCaption(
+                `✅ *VERIFIED & DELIVERED!*\n\n` +
+                `📋 Order #${orderId}\n` +
+                `👤 @${escapeMarkdown(order.username)}\n` +
+                `📦 ${formatOrderQuantitySummary(order)}\n` +
+                `💰 Rp ${formatIDR(order.total_price)}\n\n` +
+                `✅ ${
+                    isAccountOrder
+                        ? 'Account(s) sent!'
+                        : isGptOrder
+                            ? 'GPT Basics sent!'
+                            : isCapcut
+                                ? 'CapCut Basics sent!'
+                                : isGptInvite
+                                    ? 'GPT Business via Invite sent!'
+                                    : isGptGo
+                                        ? 'GPT Go sent!'
+                                        : isGptGoVcc
+                                            ? 'GPT Go VCC sent!'
+                                            : isAirwallexVcc
+                                                ? 'Airwallex VCC sent!'
+                                                : isGptPlus
+                                                    ? 'GPT Plus sent!'
+                                                    : isCanvaBusiness
+                                                        ? 'Canva Business sent!'
+                                                        : isAlight
+                                                            ? 'Alight Motion sent!'
+                                                            : isPerplexity
+                                                                ? 'Perplexity links sent!'
+                                                                : `${fallbackLabel} sent!`
+                }\n` +
+                `⏰ ${getCurrentDateTime()}`,
+                {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown'
+                }
+            ).catch(() => {});
+        } else if (deliveryFailedReason === 'unknown_product') {
+            bot.editMessageCaption(
+                `❌ *UNKNOWN PRODUCT!*\n\n` +
+                `Order #${orderId}\n` +
+                `Product field: ${escapeMarkdown(order.product || 'N/A')}\n` +
+                `Type field: ${escapeMarkdown(order.type || 'N/A')}\n\n` +
+                `No delivery sent. Please handle manually.`,
+                {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown'
+                }
+            ).catch(() => {});
+        }
+        
+        else if (data.startsWith('reject_topup_')) {
             if (!isAdmin(userId)) return;
-
-            const airwallexVccStock = getAirwallexVccStock();
-            const available = airwallexVccStock.cards?.length || 0;
-
-            bot.answerCallbackQuery(query.id, {
-                text: `📦 Airwallex VCC available: ${available}`,
-                show_alert: true
-            }).catch(() => {});
+            
+            const topupId = parseInt(data.replace('reject_topup_', ''));
+            const topup = updateTopup(topupId, {
+                status: 'rejected',
+                rejected_at: new Date().toISOString(),
+                rejected_by: userId
+            });
+            
+            if (topup) {
+                // Notify user
+                bot.sendMessage(topup.user_id,
+                    `❌ *TOP-UP REJECTED*\n\n` +
+                    `💵 Top-up ID: #T${topupId}\n` +
+                    `💰 Amount: Rp ${formatIDR(topup.amount)}\n\n` +
+                    `Your top-up request was rejected.\n` +
+                    `Contact ${ADMIN_USERNAME} for help.`,
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+                
+                // Update admin message
+                bot.editMessageCaption(
+                    `❌ *TOP-UP REJECTED*\n\n` +
+                    `💵 Top-up ID: #T${topupId}\n` +
+                    `👤 @${escapeMarkdown(topup.username)}\n` +
+                    `💰 Amount: Rp ${formatIDR(topup.amount)}\n\n` +
+                    `❌ Rejected by admin\n` +
+                    `⏰ ${getCurrentDateTime()}`,
+                    { 
+                        chat_id: chatId, 
+                        message_id: messageId,
+                        parse_mode: 'Markdown'
+                    }
+                ).catch(() => {});
+            }
         }
-
-        else if (data === 'check_gpt_go_vcc_stock') {
+        
+        // ===== PAYMENT VERIFICATION BUTTONS =====
+        else if (data.startsWith('verify_payment_')) {
             if (!isAdmin(userId)) return;
 
             await handlePaymentVerification(query);
@@ -8718,98 +9611,32 @@ bot.on('callback_query', async (query) => {
             };
 
             bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `📱 Paying via QRIS\n` +
-                `💵 Price: Rp ${formatIDR(getGptPlusPrice(variant))} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of GPT Plus accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+                `💵 *PRICING MANAGEMENT*\n\n` +
+                `📈 Spotify link tiers:\n${pricingText}\n\n` +
+                `🏷️ Product prices:\n${productSummary}\n\n` +
+                `Use *Edit Pricing* for Spotify link tiers, or *Edit Product Prices* to change Spotify accounts, GPT, Alight Motion, or Perplexity labels and prices.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
 
-        else if (data === 'pay_alight_balance' || data === 'confirm_buy_alight') {
-            const alightStock = getAlightMotionStock();
-            const available = alightStock.accounts?.length || 0;
-            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
-            const state = userStates[chatId] || {};
-            const presetQuantity = state.selected_quantity;
+        if (data === 'admin_product_settings') {
+            if (!isAdmin(userId)) return;
 
-            if (available === 0) {
-                bot.answerCallbackQuery(query.id, {
-                    text: '❌ No Alight Motion in stock!',
-                    show_alert: true
-                }).catch(() => {});
-                return;
-            }
+            const summary = buildProductPriceSummaryLines().join('\n');
 
-            if (!presetQuantity) {
-                userStates[chatId] = {
-                    state: 'awaiting_alight_quantity',
-                    payment_method: 'balance',
-                    userId: userId,
-                    user: query.from,
-                    max_quantity: maxQuantity
-                };
-
-                bot.editMessageText(
-                    `🔢 *ENTER QUANTITY*\n\n` +
-                    `💳 Paying with balance\n` +
-                    `💵 Price: ${formatAlightPriceSummary()}\n` +
-                    `📦 Available: ${available}\n` +
-                    `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                    `Send the number of Alight Motion accounts you want to buy.`,
-                    { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-                ).catch(() => {});
-                return;
-            }
-
-            const quantity = Math.min(presetQuantity, maxQuantity);
-            const alightPrice = getAlightUnitPrice(quantity);
-            const totalPrice = quantity * alightPrice;
-            const users = getUsers();
-            const balance = getBalance(userId);
-
-            if (balance < totalPrice) {
-                const shortfall = totalPrice - balance;
-                const keyboard = {
-                    inline_keyboard: [
-                        [{ text: '💵 Top Up via QRIS', callback_data: 'topup_balance' }],
-                        [{ text: '🔙 Back', callback_data: 'buy_alight_motion' }]
-                    ]
-                };
-
-                bot.sendMessage(chatId,
-                    `⚠️ Balance not enough.\n\n` +
-                    `Requested: ${quantity} Alight Motion account(s)\n` +
-                    `Total needed: Rp ${formatIDR(totalPrice)}\n` +
-                    `Current balance: Rp ${formatIDR(balance)}\n` +
-                    `Shortfall: Rp ${formatIDR(shortfall)}\n\n` +
-                    `Top up with QRIS then try again.`,
-                    { parse_mode: 'Markdown', reply_markup: keyboard }
-                ).catch(() => {});
-                return;
-            }
-
-            updateBalance(userId, -totalPrice);
-
-            const orderId = getNextOrderId();
-            const order = {
-                order_id: orderId,
-                user_id: userId,
-                username: users[userId]?.username || query.from.username || 'unknown',
-                quantity: quantity,
-                total_quantity: quantity,
-                original_price: alightPrice,
-                total_price: totalPrice,
-                status: 'completed',
-                payment_method: 'balance',
-                date: new Date().toISOString(),
-                completed_at: new Date().toISOString(),
-                product: 'alight_motion'
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '🔑 Edit Spotify Accounts', callback_data: 'edit_product_account' }],
+                    [{ text: '🤖 Edit GPT Basics', callback_data: 'edit_product_gpt_basic' }],
+                    [{ text: '📩 Edit GPT via Invite', callback_data: 'edit_product_gpt_invite' }],
+                    [{ text: '🚀 Edit GPT Go', callback_data: 'edit_product_gpt_go' }],
+                    [{ text: '✨ Edit GPT Plus', callback_data: 'edit_product_gpt_plus' }],
+                    [{ text: '🎨 Edit Canva Business', callback_data: 'edit_product_canva_business' }],
+                    [{ text: '🎬 Edit Alight Motion', callback_data: 'edit_product_alight_motion' }],
+                    [{ text: '🧠 Edit Perplexity AI', callback_data: 'edit_product_perplexity' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
             };
-
-            addOrder(order);
 
             if (!users[userId]) {
                 addUser(userId, query.from);
@@ -9240,9 +10067,33 @@ bot.on('callback_query', async (query) => {
             ).catch(() => {});
         }
 
-        else if (data === 'menu_vcc') {
-            const gptGoVccStock = getGptGoVccStock();
-            const airwallexVccStock = getAirwallexVccStock();
+        else if (data === 'admin_canva_business') {
+            if (!isAdmin(userId)) return;
+
+            const canvaStock = getCanvaBusinessStock();
+            const available = canvaStock.accounts?.length || 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '📤 Upload Canva Business File', callback_data: 'upload_canva_business_instruction' }],
+                    [{ text: '📊 Check Canva Business Stock', callback_data: 'check_canva_business_stock' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🎨 *CANVA BUSINESS INVENTORY*\n\n` +
+                `📦 Accounts available: ${available}\n\n` +
+                `Use the options below to upload or check stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'admin_gpt_invite') {
+            if (!isAdmin(userId)) return;
+
+            const gptInviteStock = getGptInviteStock();
+            const available = gptInviteStock.accounts?.length || 0;
 
             const keyboard = {
                 inline_keyboard: [
@@ -9257,6 +10108,50 @@ bot.on('callback_query', async (query) => {
                 `💳 GPT Go VCC in stock: ${(gptGoVccStock.cards || []).length}\n` +
                 `🌐 Airwallex VCC in stock: ${(airwallexVccStock.cards || []).length}\n\n` +
                 `Select a VCC product below to proceed.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'admin_gpt_go_vcc') {
+            if (!isAdmin(userId)) return;
+
+            const gptGoVccStock = getGptGoVccStock();
+            const available = gptGoVccStock.cards?.length || 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '📤 Upload GPT Go VCC File', callback_data: 'upload_gpt_go_vcc_instruction' }],
+                    [{ text: '📊 Check GPT Go VCC Stock', callback_data: 'check_gpt_go_vcc_stock' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `💳 *GPT GO VCC INVENTORY*\\n\\n` +
+                `📦 Cards available: ${available}\\n\\n` +
+                `Use the options below to upload or check stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'admin_airwallex_vcc') {
+            if (!isAdmin(userId)) return;
+
+            const airwallexVccStock = getAirwallexVccStock();
+            const available = airwallexVccStock.cards?.length || 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '📤 Upload Airwallex VCC File', callback_data: 'upload_airwallex_vcc_instruction' }],
+                    [{ text: '📊 Check Airwallex VCC Stock', callback_data: 'check_airwallex_vcc_stock' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🌐 *AIRWALLEX VCC INVENTORY*\\n\\n` +
+                `📦 Cards available: ${available}\\n\\n` +
+                `Use the options below to upload or check stock.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -9668,6 +10563,30 @@ bot.on('callback_query', async (query) => {
             }
 
         else if (data === 'check_gpt_go_vcc_stock') {
+            if (!isAdmin(userId)) return;
+
+            const gptGoVccStock = getGptGoVccStock();
+            const available = gptGoVccStock.cards?.length || 0;
+
+            bot.answerCallbackQuery(query.id, {
+                text: `📦 GPT Go VCC available: ${available}`,
+                show_alert: true
+            }).catch(() => {});
+        }
+
+        else if (data === 'check_airwallex_vcc_stock') {
+            if (!isAdmin(userId)) return;
+
+            const airwallexVccStock = getAirwallexVccStock();
+            const available = airwallexVccStock.cards?.length || 0;
+
+            bot.answerCallbackQuery(query.id, {
+                text: `📦 Airwallex VCC available: ${available}`,
+                show_alert: true
+            }).catch(() => {});
+        }
+
+        else if (data === 'check_alight_stock') {
             if (!isAdmin(userId)) return;
 
             const gptGoVccStock = getGptGoVccStock();
@@ -11874,6 +12793,193 @@ bot.on('callback_query', async (query) => {
             ).catch(() => {});
         }
 
+        else if (data === 'menu_vcc') {
+            const gptGoVccStock = getGptGoVccStock();
+            const airwallexVccStock = getAirwallexVccStock();
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: `💳 GPT Go VCC (Rp ${formatIDR(getGptGoVccPrice())})`, callback_data: 'buy_gpt_go_vcc' }],
+                    [{ text: `🌐 Airwallex VCC (${formatAirwallexVccPriceSummary()})`, callback_data: 'buy_airwallex_vcc' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `💳 *VCC STORE*\n\n` +
+                `💳 GPT Go VCC in stock: ${(gptGoVccStock.cards || []).length}\n` +
+                `🌐 Airwallex VCC in stock: ${(airwallexVccStock.cards || []).length}\n\n` +
+                `Select a VCC product below to proceed.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'canva_business') {
+            const canvaStock = getCanvaBusinessStock();
+            const available = canvaStock.accounts?.length || 0;
+            const canBuy = available > 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '💳 Pay with Balance', callback_data: 'pay_canva_business_balance' }],
+                    [{ text: '📱 Pay via QRIS', callback_data: 'pay_canva_business_qris' }],
+                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
+                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
+            };
+
+            const statusLine = available === 0
+                ? '❌ Out of stock! Please upload more Canva Business accounts.'
+                : canBuy
+                    ? '✅ Choose payment method below.'
+                    : '⚠️ Not enough balance. Please top up.';
+
+            bot.editMessageText(
+                `🎨 *BUY CANVA BUSINESS*\n\n` +
+                `💵 Price: ${formatCanvaBusinessPriceSummary()}\n` +
+                `📦 Accounts available: ${available}\n\n` +
+                `${statusLine}\n\n` +
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))} accounts depending on stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'buy_gpt_go_vcc') {
+            const stock = getGptGoVccStock();
+            const available = stock.cards?.length || 0;
+            const price = getGptGoVccPrice();
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '💳 Pay with Balance', callback_data: 'pay_gpt_go_vcc_balance' }],
+                    [{ text: '📱 Pay via QRIS', callback_data: 'pay_gpt_go_vcc_qris' }],
+                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
+                    [{ text: '📱 DM Admin', url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }],
+                    [{ text: '🔙 Back', callback_data: 'menu_vcc' }]
+                ]
+            };
+
+            const statusLine = available === 0
+                ? `❌ Out of stock! Contact ${ADMIN_USERNAME} for a restock.`
+                : '✅ Choose payment method below.';
+
+            bot.editMessageText(
+                `💳 *BUY GPT GO VCC*\n\n` +
+                `💵 Price: Rp ${formatIDR(price)} per card\n` +
+                `📦 Available: ${available}\n\n` +
+                `${statusLine}\n\n` +
+                `📦 Delivery: Card number + expiry MM/YY + CVV auto-dropped from uploaded GPT Go VCC stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'buy_airwallex_vcc') {
+            const airwallexVccStock = getAirwallexVccStock();
+            const available = airwallexVccStock.cards?.length || 0;
+            const variants = getAirwallexVccVariants();
+
+            const variantButtons = variants
+                .filter(v => v.price === null ? true : v.price > 0)
+                .map(v => {
+                    const priceLabel = v.price ? `— Rp ${formatIDR(v.price)}` : `— DM ${ADMIN_USERNAME}`;
+                    const button = v.price
+                        ? { text: `${v.label} ${priceLabel}`, callback_data: `select_airwallex_vcc_${v.id}` }
+                        : { text: `${v.label} ${priceLabel}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` };
+                    return [button];
+                });
+
+            const keyboard = {
+                inline_keyboard: [
+                    ...variantButtons,
+                    [{ text: '📱 DM Admin', url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }],
+                    [{ text: '🔙 Back', callback_data: 'menu_vcc' }]
+                ]
+            };
+
+            const premiumLines = [
+                `✨ *VCC AIRWALLEX — FRANCE 🇫🇷*`,
+                '',
+                `🔥 VCC for DigitalOcean — [Rp ${formatIDR(5_000)}]`,
+                `🔥 VCC for PayPal        — [Rp ${formatIDR(1_000)}]`,
+                `🔥 VCC for AWS           — [Rp ${formatIDR(1_000)}]`,
+                `🔥 VCC for Other Clouds  — [Rp ${formatIDR(3_000)}]`,
+                '',
+                `🔥 VCC for ChatGPT       — [Rp ${formatIDR(1_000)}]`,
+                `🔥 VCC for Spotify       — [Rp ${formatIDR(3_000)}]`,
+                `🔥 VCC for Gemini        — [Rp ${formatIDR(1_000)}]`,
+                '',
+                `🔥 VCC for Premium Apps:`,
+                `    Deepl, Surfshark, CapCut,`,
+                `    ExpressVPN, Cursor, Canva, etc.`,
+                `    — [Rp ${formatIDR(getAirwallexVccPrice())}]`,
+                '',
+                `🔥 VCC for Discord       — [Rp ${formatIDR(3_000)}]`,
+                '',
+                `❓ Need something not listed?`,
+                `✨ Custom requests available.`,
+                '',
+                `📦 Delivery: 1 Airwallex card + CVV per order with default expiry 12/28.`
+            ].join('\n');
+
+            const statusLine = available === 0
+                ? `❌ Out of stock! Contact ${ADMIN_USERNAME} for a restock.`
+                : '✅ Pick a card type below to continue.';
+
+            bot.editMessageText(
+                `${premiumLines}\n\n${statusLine}`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data.startsWith('select_airwallex_vcc_')) {
+            const variantId = data.replace('select_airwallex_vcc_', '');
+            const variant = getAirwallexVccVariant(variantId);
+
+            if (!variant) {
+                bot.answerCallbackQuery(query.id, { text: '❌ Unknown Airwallex VCC type.' }).catch(() => {});
+                return;
+            }
+
+            if (variant.price === null) {
+                bot.answerCallbackQuery(query.id, { text: `📱 DM ${ADMIN_USERNAME} for custom pricing.`, show_alert: true }).catch(() => {});
+                return;
+            }
+
+            const vccStock = getAirwallexVccStock();
+            const available = vccStock.cards?.length || 0;
+            const maxQuantity = 1;
+
+            const keyboard = { inline_keyboard: [] };
+
+            if (available > 0) {
+                keyboard.inline_keyboard.push(
+                    [{ text: '💳 Pay with Balance', callback_data: `pay_airwallex_vcc_balance:${variant.id}` }],
+                    [{ text: '📱 Pay via QRIS', callback_data: `pay_airwallex_vcc_qris:${variant.id}` }],
+                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }]
+                );
+            }
+
+            keyboard.inline_keyboard.push(
+                [{ text: '📱 DM Admin', url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }],
+                [{ text: '🔙 Back', callback_data: 'buy_airwallex_vcc' }]
+            );
+
+            const statusLine = available === 0
+                ? `❌ Out of stock! Contact ${ADMIN_USERNAME} for a restock.`
+                : `✅ ${variant.label} selected. Choose payment below.`;
+
+            bot.editMessageText(
+                `🌐 *${variant.label.toUpperCase()}*\n\n` +
+                `💵 Price: Rp ${formatIDR(variant.price)} per card\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `${statusLine}\n\n` +
+                `📦 Delivery: Airwallex card number + CVV auto-dropped with default expiry 12/28.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
         else if (data === 'menu_balance') {
             const keyboard = {
                 inline_keyboard: [
@@ -12232,6 +13338,206 @@ bot.on('callback_query', async (query) => {
         else if (data === 'pay_gpt_qris') {
             const gptStock = getGptBasicsStock();
             const available = gptStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No GPT Go VCC in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                bot.sendMessage(chatId, `📭 GPT Go VCC is out of stock. Contact ${ADMIN_USERNAME} for a restock.`, {
+                    reply_markup: {
+                        inline_keyboard: [[{ text: `📱 DM ${ADMIN_USERNAME}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }]]
+                    }
+                }).catch(() => {});
+                return;
+            }
+
+            showQuantityPicker(query.message, {
+                product: 'gpt_go_vcc',
+                payment_method: 'qris',
+                max: maxQuantity,
+                unitPrice: getGptGoVccPrice(),
+                label: getProductLabel('gpt_go_vcc', 'GPT Go VCC'),
+                back_callback: 'buy_gpt_go_vcc'
+            });
+        }
+
+        else if (data === 'pay_airwallex_vcc_balance' || data.startsWith('pay_airwallex_vcc_balance:')) {
+            const variantId = data.split(':')[1];
+            const variant = variantId ? getAirwallexVccVariant(variantId) : getAirwallexVccVariants().find(v => v.price);
+            if (!variant || variant.price === null) {
+                bot.answerCallbackQuery(query.id, { text: `📱 DM ${ADMIN_USERNAME} for Airwallex pricing.`, show_alert: true }).catch(() => {});
+                return;
+            }
+            const vccStock = getAirwallexVccStock();
+            const available = vccStock.cards?.length || 0;
+            const maxQuantity = 1;
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Airwallex VCC in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                bot.sendMessage(chatId, `📭 Airwallex VCC is out of stock. Contact ${ADMIN_USERNAME} for a restock.`, {
+                    reply_markup: {
+                        inline_keyboard: [[{ text: `📱 DM ${ADMIN_USERNAME}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }]]
+                    }
+                }).catch(() => {});
+                return;
+            }
+
+            showQuantityPicker(query.message, {
+                product: 'airwallex_vcc',
+                payment_method: 'balance',
+                max: maxQuantity,
+                unitPrice: variant.price,
+                label: variant.label || getProductLabel('airwallex_vcc', 'Airwallex VCC'),
+                back_callback: 'buy_airwallex_vcc',
+                variant_id: variant.id,
+                variant_label: variant.label,
+                price: variant.price
+            });
+        }
+
+        else if (data === 'pay_airwallex_vcc_qris' || data.startsWith('pay_airwallex_vcc_qris:')) {
+            const variantId = data.split(':')[1];
+            const variant = variantId ? getAirwallexVccVariant(variantId) : getAirwallexVccVariants().find(v => v.price);
+            if (!variant || variant.price === null) {
+                bot.answerCallbackQuery(query.id, { text: `📱 DM ${ADMIN_USERNAME} for Airwallex pricing.`, show_alert: true }).catch(() => {});
+                return;
+            }
+            const vccStock = getAirwallexVccStock();
+            const available = vccStock.cards?.length || 0;
+            const maxQuantity = 1;
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Airwallex VCC in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                bot.sendMessage(chatId, `📭 Airwallex VCC is out of stock. Contact ${ADMIN_USERNAME} for a restock.`, {
+                    reply_markup: {
+                        inline_keyboard: [[{ text: `📱 DM ${ADMIN_USERNAME}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }]]
+                    }
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_gpt_go_quantity',
+                payment_method: 'qris',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `📱 Paying via QRIS\n` +
+                `💵 Price: Rp ${formatIDR(getGptGoPrice())} per account\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of GPT Go accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_canva_business_balance') {
+            const canvaStock = getCanvaBusinessStock();
+            const available = canvaStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Canva Business in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_canva_business_quantity',
+                payment_method: 'balance',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `💳 Paying with balance\n` +
+                `💵 Price: ${formatCanvaBusinessPriceSummary()}\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of Canva Business accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_gpt_qris') {
+            const gptStock = getGptBasicsStock();
+            const available = gptStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Canva Business in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_canva_business_quantity',
+                payment_method: 'qris',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `📱 Paying via QRIS\n` +
+                `💵 Price: ${formatCanvaBusinessPriceSummary()}\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of Canva Business accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_gpt_go_balance' || data === 'confirm_buy_gpt_go') {
+            const gptGoStock = getGptGoStock();
+            const available = gptGoStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No GPT Go VCC in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                bot.sendMessage(chatId, `📭 GPT Go VCC is out of stock. Contact ${ADMIN_USERNAME} for a restock.`, {
+                    reply_markup: {
+                        inline_keyboard: [[{ text: `📱 DM ${ADMIN_USERNAME}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }]]
+                    }
+                }).catch(() => {});
+                return;
+            }
+
+            showQuantityPicker(query.message, {
+                product: 'gpt_go_vcc',
+                payment_method: 'balance',
+                max: maxQuantity,
+                unitPrice: getGptGoVccPrice(),
+                label: getProductLabel('gpt_go_vcc', 'GPT Go VCC'),
+                back_callback: 'buy_gpt_go_vcc'
+            });
+        }
+
+        else if (data === 'pay_gpt_go_vcc_qris') {
+            const vccStock = getGptGoVccStock();
+            const available = vccStock.cards?.length || 0;
             const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
