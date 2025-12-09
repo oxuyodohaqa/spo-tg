@@ -4250,10 +4250,13 @@ bot.on('callback_query', async (query) => {
             const isCapcut = isCapcutBasicsOrder(order);
             const isGptInvite = isGptInviteOrder(order);
             const isGptGo = isGptGoOrder(order);
+            const isGptGoVcc = isGptGoVccOrder(order);
+            const isAirwallexVcc = isAirwallexVccOrder(order);
             const isGptPlus = isGptPlusOrder(order);
+            const isCanvaBusiness = isCanvaBusinessOrder(order);
             const isAlight = isAlightMotionOrder(order);
             const isPerplexity = isPerplexityOrder(order);
-            const isCredential = isAccountOrder || isGptOrder || isCapcut || isGptInvite || isGptGo || isGptPlus || isAlight || isPerplexity;
+            const isCredential = isAccountOrder || isGptOrder || isCapcut || isGptInvite || isGptGo || isGptGoVcc || isAirwallexVcc || isGptPlus || isCanvaBusiness || isAlight || isPerplexity;
 
             if (!order) {
                 bot.answerCallbackQuery(query.id, {
@@ -4280,13 +4283,19 @@ bot.on('callback_query', async (query) => {
                                     ? 'GPT Business via Invite account(s)'
                                     : isGptGo
                                         ? 'GPT Go account(s)'
-                                        : isGptPlus
-                                            ? 'GPT Plus account(s)'
-                                            : isAlight
-                                                ? 'Alight Motion account(s)'
-                                                : isPerplexity
-                                                    ? 'Perplexity link(s)'
-                                                    : 'links'
+                                        : isGptGoVcc
+                                            ? 'GPT Go VCC card(s)'
+                                            : isAirwallexVcc
+                                                ? 'Airwallex VCC card(s)'
+                                                : isGptPlus
+                                                    ? 'GPT Plus account(s)'
+                                                    : isCanvaBusiness
+                                                        ? 'Canva Business account(s)'
+                                                        : isAlight
+                                                            ? 'Alight Motion account(s)'
+                                                            : isPerplexity
+                                                                ? 'Perplexity link(s)'
+                                                                : 'links'
                 }${bonusNote}...`,
                 {
                     chat_id: chatId,
@@ -4312,8 +4321,17 @@ bot.on('callback_query', async (query) => {
             } else if (isGptGo) {
                 const result = await deliverGptGo(order.user_id, orderId, order.quantity);
                 delivered = result.success;
+            } else if (isGptGoVcc) {
+                const result = await deliverGptGoVcc(order.user_id, orderId, order.quantity, order.original_price || getGptGoVccPrice());
+                delivered = result.success;
+            } else if (isAirwallexVcc) {
+                const result = await deliverAirwallexVcc(order.user_id, orderId, order.quantity, order.original_price || getAirwallexVccPrice());
+                delivered = result.success;
             } else if (isGptPlus) {
                 const result = await deliverGptPlus(order.user_id, orderId, order.quantity, order.variant || 'nw');
+                delivered = result.success;
+            } else if (isCanvaBusiness) {
+                const result = await deliverCanvaBusiness(order.user_id, orderId, order.quantity, order.original_price || getCanvaBusinessPrice());
                 delivered = result.success;
             } else if (isAlight) {
                 const result = await deliverAlightMotion(order.user_id, orderId, order.quantity);
@@ -4355,13 +4373,19 @@ bot.on('callback_query', async (query) => {
                                     ? 'GPT Business via Invite sent!'
                                     : isGptGo
                                         ? 'GPT Go sent!'
-                                        : isGptPlus
-                                            ? 'GPT Plus sent!'
-                                            : isAlight
-                                                ? 'Alight Motion sent!'
-                                                : isPerplexity
-                                                    ? 'Perplexity links sent!'
-                                                    : 'links sent!'
+                                        : isGptGoVcc
+                                            ? 'GPT Go VCC sent!'
+                                            : isAirwallexVcc
+                                                ? 'Airwallex VCC sent!'
+                                                : isGptPlus
+                                                    ? 'GPT Plus sent!'
+                                                    : isCanvaBusiness
+                                                        ? 'Canva Business sent!'
+                                                        : isAlight
+                                                            ? 'Alight Motion sent!'
+                                                            : isPerplexity
+                                                                ? 'Perplexity links sent!'
+                                                                : 'links sent!'
                     }\n` +
                     `⏰ ${getCurrentDateTime()}`,
                     {
@@ -4384,18 +4408,28 @@ bot.on('callback_query', async (query) => {
                                     ? (getGptInviteStock().accounts || []).length
                                     : isGptGo
                                         ? (getGptGoStock().accounts || []).length
-                                        : isGptPlus
-                                            ? (getGptPlusStock().accounts || []).length
-                                            : isAlight
-                                                ? (getAlightMotionStock().accounts || []).length
-                                                : isPerplexity
-                                                    ? (getPerplexityStock().links || []).length
-                                                    : getStock().links.length
+                                        : isGptGoVcc
+                                            ? (getGptGoVccStock().cards || []).length
+                                            : isAirwallexVcc
+                                                ? (getAirwallexVccStock().cards || []).length
+                                                : isGptPlus
+                                                    ? (getGptPlusStock().accounts || []).length
+                                                    : isCanvaBusiness
+                                                        ? (getCanvaBusinessStock().accounts || []).length
+                                                        : isAlight
+                                                            ? (getAlightMotionStock().accounts || []).length
+                                                            : isPerplexity
+                                                                ? (getPerplexityStock().links || []).length
+                                                                : getStock().links.length
                     }\n\n` +
                     (isAccountOrder
                         ? 'Add more accounts!'
                         : isGptOrder || isGptInvite || isGptGo || isGptPlus
                             ? 'Add more GPT stock!'
+                            : isGptGoVcc || isAirwallexVcc
+                                ? 'Add more VCC cards!'
+                            : isCanvaBusiness
+                                ? 'Add more Canva Business accounts!'
                             : isPerplexity
                                 ? 'Add more Perplexity links!'
                                 : 'Add more links!'),
