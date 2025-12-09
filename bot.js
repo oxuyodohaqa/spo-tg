@@ -1265,6 +1265,21 @@ function formatIDR(amount) {
     return new Intl.NumberFormat('id-ID').format(amount);
 }
 
+// Product code to quantity state name mapping for inline quantity pickers
+const PRODUCT_TO_QUANTITY_STATE = {
+    'gpt_basic': 'gpt',
+    'capcut_basic': 'capcut',
+    'canva_business': 'canva_business',
+    'gpt_go': 'gpt_go',
+    'gpt_go_vcc': 'gpt_go_vcc',
+    'airwallex_vcc': 'airwallex_vcc',
+    'gpt_invite': 'gpt_invite',
+    'gpt_plus': 'gpt_plus',
+    'alight_motion': 'alight',
+    'perplexity_ai': 'perplexity',
+    'account': 'account'
+};
+
 function buildQuantityKeyboard(picker) {
     return {
         inline_keyboard: [
@@ -1365,20 +1380,14 @@ async function handleQuantityConfirm(query) {
     }
 
     // Handle other products by delegating to existing text handlers
-    // Map product codes to their quantity state names
-    const productToStateMap = {
-        'gpt_basic': 'gpt',
-        'capcut_basic': 'capcut',
-        'canva_business': 'canva_business',
-        'gpt_go': 'gpt_go',
-        'gpt_invite': 'gpt_invite',
-        'gpt_plus': 'gpt_plus',
-        'alight_motion': 'alight',
-        'perplexity_ai': 'perplexity',
-        'account': 'account'
-    };
+    const stateName = PRODUCT_TO_QUANTITY_STATE[picker.product];
 
-    const stateName = productToStateMap[picker.product] || 'unknown';
+    if (!stateName) {
+        console.error(`Unknown product type in quantity picker: ${picker.product}`);
+        bot.sendMessage(chatId, '❌ An error occurred. Please try again or contact support.').catch(() => {});
+        delete userStates[chatId];
+        return;
+    }
 
     // Set up the state for the text handler to process
     userStates[chatId] = {
@@ -1391,7 +1400,9 @@ async function handleQuantityConfirm(query) {
     };
 
     // Trigger existing handler by emitting a message event with the quantity
-    // Note: This reuses existing tested order processing logic to avoid code duplication
+    // Note: This approach reuses existing tested order processing logic to avoid code duplication.
+    // While emitting synthetic events isn't ideal for testing, it prevents duplicating complex
+    // order processing logic that includes balance checks, stock validation, payment handling, etc.
     bot.emit('message', {
         chat: { id: chatId },
         from: query.from,
