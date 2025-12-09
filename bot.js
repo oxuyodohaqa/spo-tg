@@ -6985,29 +6985,33 @@ else if (data.startsWith('claim_gift_')) {
                 ]
             };
 
-            const fulfillmentNote = isGoVcc
-                ? `📦 Delivery: Admin shares your GPT Go card number, expiry month/year, and CVV so you can use it by plan (card/month/year/CVV uploaded).`
-                : `📦 Delivery: Admin provides the Airwallex card number and CVV. Expiry is default 12/28 for all cards.`;
+            const productDetails = isGoVcc
+                ? `✨ GPT GO VCC\n\n` +
+                  `Use these cards to pay for GPT Go subscriptions.\n\n` +
+                  `💡 Ask ${ADMIN_USERNAME} for current pricing and QRIS.\n` +
+                  `📦 Delivery: Admin shares the card number, expiry month/year, and CVV from uploaded stock.\n\n` +
+                  `Orders are handled manually. Contact the admin to finalize payment.`
+                : `✨ VCC AIRWALLEX — FRANCE 🇫🇷\n\n` +
+                  `🔥 VCC for DigitalOcean  — \[5k]\n` +
+                  `🔥 VCC for PayPal        — \[1k]\n` +
+                  `🔥 VCC for AWS           — \[1k]\n` +
+                  `🔥 VCC for Other Clouds  — \[3k]\n\n` +
+                  `🔥 VCC for ChatGPT       — \[1k]\n` +
+                  `🔥 VCC for Spotify       — \[3k]\n` +
+                  `🔥 VCC for Gemini        — \[1k]\n\n` +
+                  `🔥 VCC for Premium Apps:\n` +
+                  `    Deepl, Surfshark, CapCut,\n` +
+                  `    ExpressVPN, Cursor, Canva, etc.\n` +
+                  `    — [price]\n\n` +
+                  `🔥 VCC for Discord       — \[3k]\n\n` +
+                  `📦 Delivery: Admin provides the Airwallex card number and CVV. Expiry is default 12/28 for all cards.\n\n` +
+                  `❓ Need something not listed?\n\n` +
+                  `✨ Custom requests available.\n\n` +
+                  `Orders are handled manually. Contact ${ADMIN_USERNAME} to finalize pricing, request the QRIS code, and pay like other products.`;
 
             bot.editMessageText(
                 `💳 *${label}*\n\n` +
-                `✨ VCC AIRWALLEX — FRANCE 🇫🇷\n\n` +
-                `🔥 VCC for DigitalOcean  — \[5k]\n` +
-                `🔥 VCC for PayPal        — \[1k]\n` +
-                `🔥 VCC for AWS           — \[1k]\n` +
-                `🔥 VCC for Other Clouds  — \[3k]\n\n` +
-                `🔥 VCC for ChatGPT       — \[1k]\n` +
-                `🔥 VCC for Spotify       — \[3k]\n` +
-                `🔥 VCC for Gemini        — \[1k]\n\n` +
-                `🔥 VCC for Premium Apps:\n` +
-                `    Deepl, Surfshark, CapCut,\n` +
-                `    ExpressVPN, Cursor, Canva, etc.\n` +
-                `    — [price]\n\n` +
-                `🔥 VCC for Discord       — \[3k]\n\n` +
-                `${fulfillmentNote}\n\n` +
-                `❓ Need something not listed?\n\n` +
-                `✨ Custom requests available.\n\n` +
-                `Orders are handled manually. Contact ${ADMIN_USERNAME} to finalize pricing, request the QRIS code, and pay like other products.`,
+                `${productDetails}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
