@@ -1241,47 +1241,6 @@ function getPricePerUnit(quantity) {
     return pricing[firstRange];
 }
 
-function calculateQuantityForBudget(budget) {
-    const pricing = getPricing();
-    let bestQuantity = 0;
-    let bestPrice = 0;
-    
-    const sortedRanges = Object.keys(pricing).sort((a, b) => {
-        const aMin = parseInt(a.split('-')[0]);
-        const bMin = parseInt(b.split('-')[0]);
-        return bMin - aMin;
-    });
-    
-    for (const range of sortedRanges) {
-        const pricePerUnit = pricing[range];
-        const qty = Math.floor(budget / pricePerUnit);
-        
-        if (qty > 0) {
-            if (range.includes('+')) {
-                const min = parseInt(range.replace('+', ''));
-                if (qty >= min) {
-                    const totalPrice = qty * pricePerUnit;
-                    if (totalPrice <= budget && qty > bestQuantity) {
-                        bestQuantity = qty;
-                        bestPrice = totalPrice;
-                    }
-                }
-            } else {
-                const [min, max] = range.split('-').map(n => parseInt(n));
-                if (qty >= min && qty <= max) {
-                    const totalPrice = qty * pricePerUnit;
-                    if (totalPrice <= budget && qty > bestQuantity) {
-                        bestQuantity = qty;
-                        bestPrice = totalPrice;
-                    }
-                }
-            }
-        }
-    }
-    
-    return { quantity: bestQuantity, price: bestPrice, pricePerUnit: bestQuantity > 0 ? Math.floor(bestPrice / bestQuantity) : 0 };
-}
-
 function formatIDR(amount) {
     return new Intl.NumberFormat('id-ID').format(amount);
 }
@@ -2285,7 +2244,6 @@ function broadcastRestock(addedCount = 0, newTotal = 0) {
         `💰 *Current Pricing:*\n` +
         `${pricingText}\n\n` +
         `${couponText}` +
-        `🧮 Use calculator to check pricing!\n` +
         `⚡ Instant delivery after payment\n\n` +
         `Order now: /start`;
     
@@ -2821,6 +2779,7 @@ bot.onText(/\/start/, (msg) => {
         const gptInviteStock = getGptInviteStock();
         const gptGoStock = getGptGoStock();
         const gptPlusStock = getGptPlusStock();
+        const canvaStock = getCanvaBusinessStock();
         const alightStock = getAlightMotionStock();
         const perplexityStock = getPerplexityStock();
         const accountAvailable = accountStock.accounts?.length || 0;
@@ -2829,6 +2788,7 @@ bot.onText(/\/start/, (msg) => {
         const gptInviteAvailable = gptInviteStock.accounts?.length || 0;
         const gptGoAvailable = gptGoStock.accounts?.length || 0;
         const gptPlusAvailable = gptPlusStock.accounts?.length || 0;
+        const canvaAvailable = canvaStock.accounts?.length || 0;
         const alightAvailable = alightStock.accounts?.length || 0;
         const perplexityAvailable = perplexityStock.links?.length || 0;
         const linkAvailable = stock.links?.length || 0;
@@ -2841,11 +2801,12 @@ bot.onText(/\/start/, (msg) => {
             inline_keyboard: [
                 [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                 [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
+                [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
+                [{ text: '💳 VCC Store', callback_data: 'menu_vcc' }],
                 [{ text: `🎞️ ${getProductLabel('capcut_basic', 'CapCut Basics')} (Rp ${formatIDR(getCapcutBasicsPrice())})`, callback_data: 'buy_capcut_basics' }],
                 [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                 [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                 [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
-                [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
                 [{ text: '📦 Stock', callback_data: 'check_stock' }],
                 [{ text: '📝 My Orders', callback_data: 'my_orders' }],
                 [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
@@ -2862,6 +2823,7 @@ bot.onText(/\/start/, (msg) => {
                 `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: ${formatGptInvitePriceSummary()}\n` +
                 `🚀 ${escapeMarkdown(getProductLabel('gpt_go', 'GPT Go'))}: ${formatGptGoPriceSummary()}\n` +
                 `✨ ${escapeMarkdown(getProductLabel('gpt_plus', 'GPT Plus'))}: ${formatGptPlusPriceSummary()}\n` +
+                `🎨 ${escapeMarkdown(getProductLabel('canva_business', 'Canva Business'))}: ${formatCanvaBusinessPriceSummary()}\n` +
                 `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Account'))}: ${formatAlightPriceSummary()}\n` +
                 `🧠 ${escapeMarkdown(getPerplexityConfig().label)}: ${formatPerplexityPriceSummary()}\n` +
                 `💳 Balance: Rp ${formatIDR(balance)}\n` +
@@ -2872,13 +2834,13 @@ bot.onText(/\/start/, (msg) => {
                 `📩 GPT Business via Invite in stock: ${gptInviteAvailable}\n` +
                 `🚀 GPT Go in stock: ${gptGoAvailable}\n` +
                 `✨ GPT Plus in stock: ${gptPlusAvailable}\n` +
+                `🎨 Canva Business in stock: ${canvaAvailable}\n` +
                 `🎬 Alight Motion in stock: ${alightAvailable}\n` +
                 `🧠 Perplexity links in stock: ${perplexityAvailable}\n\n` +
                 `💰 *Pricing:*\n` +
                 `${pricingText}\n\n` +
             `🎁 Daily bonus available!\n` +
             `💵 Top up balance easily!\n` +
-            `🧮 Use calculator for pricing\n` +
             `🎟️ Use code AAB for 10% off!\n\n` +
             `📱 Admin: ${ADMIN_USERNAME}`,
             { parse_mode: 'Markdown', reply_markup: keyboard }
@@ -5455,97 +5417,6 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
         
-        // ===== CALCULATOR BUTTONS =====
-        else if (data === 'open_calculator') {
-            const keyboard = {
-                inline_keyboard: [
-                    [{ text: '💰 By Budget', callback_data: 'calc_budget' }],
-                    [{ text: '📦 By Quantity', callback_data: 'calc_quantity' }],
-                    [{ text: '💵 View Pricing', callback_data: 'calc_view_pricing' }],
-                    [{ text: '🎁 Bonus Deals', callback_data: 'view_bonus_deals' }],
-                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
-                ]
-            };
-
-            const pricing = getPricing();
-            const pricingText = Object.keys(pricing).map(range =>
-                `• ${range}: Rp ${formatIDR(pricing[range])}/acc`
-            ).join('\n');
-            const bonuses = getBonuses();
-            const bonusText = bonuses.length > 0
-                ? `\n\n🎁 Bonus Deals apply automatically!`
-                : '';
-
-            bot.editMessageText(
-                `🧮 *SMART CALCULATOR*\n\n` +
-                `💰 Pricing:\n${pricingText}${bonusText}\n\n` +
-                `What to calculate?`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
-        }
-        
-        else if (data === 'calc_budget') {
-            userStates[chatId] = { state: 'awaiting_budget_calc' };
-            
-            bot.editMessageText(
-                `💰 *CALCULATE BY BUDGET*\n\n` +
-                `Enter your budget:\n\n` +
-                `Example: 50000\n\n` +
-                `💡 I'll show how many links you can buy!`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
-        }
-        
-        else if (data === 'calc_quantity') {
-            userStates[chatId] = { state: 'awaiting_quantity_calc' };
-            
-            bot.editMessageText(
-                `📦 *CALCULATE BY QUANTITY*\n\n` +
-                `Enter number of links:\n\n` +
-                `Example: 100\n\n` +
-                `💡 I'll show you the total price!`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
-        }
-        
-        else if (data === 'calc_view_pricing') {
-            const pricing = getPricing();
-            const pricingDetails = Object.keys(pricing).map(range => {
-                const price = pricing[range];
-                let examples = '';
-                
-                if (range.includes('-')) {
-                    const [min, max] = range.split('-').map(n => parseInt(n));
-                    examples = `\n   Example: ${min} links = Rp ${formatIDR(min * price)}`;
-                } else {
-                    const min = parseInt(range.replace('+', ''));
-                    examples = `\n   Example: ${min} links = Rp ${formatIDR(min * price)}`;
-                }
-                
-                return `📌 *${range} links*\n` +
-                       `   Price: Rp ${formatIDR(price)}/account${examples}`;
-            }).join('\n\n');
-            const bonuses = getBonuses();
-            const bonusText = bonuses.length > 0
-                ? `\n\n🎁 *Bonus Deals:*\n${formatBonusDealsList()}`
-                : '';
-
-            const keyboard = {
-                inline_keyboard: [
-                    [{ text: '🧮 Calculate', callback_data: 'open_calculator' }],
-                    [{ text: '🛒 Order Now', callback_data: 'order' }],
-                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
-                ]
-            };
-
-            bot.editMessageText(
-                `💵 *COMPLETE PRICING TABLE*\n\n` +
-                `${pricingDetails}${bonusText}\n\n` +
-                `💡 Bulk orders get better pricing!\n` +
-                `🎟️ Use coupon codes for extra discounts!`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
-        }
         else if (data === 'view_bonus_deals') {
             const bonuses = getBonuses();
             const bonusText = bonuses.length > 0
@@ -5555,7 +5426,6 @@ else if (data.startsWith('claim_gift_')) {
             const keyboard = {
                 inline_keyboard: [
                     [{ text: '🛒 Order Now', callback_data: 'order' }],
-                    [{ text: '🧮 Calculator', callback_data: 'open_calculator' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
             };
@@ -7567,10 +7437,10 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                     [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
                     [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
+                    [{ text: '💳 VCC Store', callback_data: 'menu_vcc' }],
                     [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                     [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                     [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
-                    [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
                     [{ text: '🎁 Bonus Deals', callback_data: 'view_bonus_deals' }],
                     [{ text: '📦 Stock', callback_data: 'check_stock' }],
                     [{ text: '📝 My Orders', callback_data: 'my_orders' }],
@@ -7895,6 +7765,172 @@ else if (data.startsWith('claim_gift_')) {
         else if (data === 'pay_gpt_go_vcc_balance') {
             const vccStock = getGptGoVccStock();
             const available = vccStock.cards?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No GPT Go VCC in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                bot.sendMessage(chatId, `📭 GPT Go VCC is out of stock. Contact ${ADMIN_USERNAME} for a restock.`, {
+                    reply_markup: {
+                        inline_keyboard: [[{ text: `📱 DM ${ADMIN_USERNAME}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }]]
+                    }
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_gpt_go_vcc_quantity',
+                payment_method: 'balance',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `💳 Paying with balance\n` +
+                `💵 Price: Rp ${formatIDR(getGptGoVccPrice())} per card\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of GPT Go VCC cards you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_gpt_go_vcc_qris') {
+            const vccStock = getGptGoVccStock();
+            const available = vccStock.cards?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No GPT Go VCC in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                bot.sendMessage(chatId, `📭 GPT Go VCC is out of stock. Contact ${ADMIN_USERNAME} for a restock.`, {
+                    reply_markup: {
+                        inline_keyboard: [[{ text: `📱 DM ${ADMIN_USERNAME}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }]]
+                    }
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_gpt_go_vcc_quantity',
+                payment_method: 'qris',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `📱 Paying via QRIS\n` +
+                `💵 Price: Rp ${formatIDR(getGptGoVccPrice())} per card\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of GPT Go VCC cards you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_airwallex_vcc_balance' || data.startsWith('pay_airwallex_vcc_balance:')) {
+            const variantId = data.split(':')[1];
+            const variant = variantId ? getAirwallexVccVariant(variantId) : getAirwallexVccVariants().find(v => v.price);
+            if (!variant || variant.price === null) {
+                bot.answerCallbackQuery(query.id, { text: `📱 DM ${ADMIN_USERNAME} for Airwallex pricing.`, show_alert: true }).catch(() => {});
+                return;
+            }
+            const vccStock = getAirwallexVccStock();
+            const available = vccStock.cards?.length || 0;
+            const maxQuantity = 1;
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Airwallex VCC in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                bot.sendMessage(chatId, `📭 Airwallex VCC is out of stock. Contact ${ADMIN_USERNAME} for a restock.`, {
+                    reply_markup: {
+                        inline_keyboard: [[{ text: `📱 DM ${ADMIN_USERNAME}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }]]
+                    }
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_airwallex_vcc_quantity',
+                payment_method: 'balance',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity,
+                variant_id: variant.id,
+                variant_label: variant.label,
+                price: variant.price
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `💳 Paying with balance\n` +
+                `💵 Price: Rp ${formatIDR(variant.price)} per card\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of Airwallex VCC cards you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_airwallex_vcc_qris' || data.startsWith('pay_airwallex_vcc_qris:')) {
+            const variantId = data.split(':')[1];
+            const variant = variantId ? getAirwallexVccVariant(variantId) : getAirwallexVccVariants().find(v => v.price);
+            if (!variant || variant.price === null) {
+                bot.answerCallbackQuery(query.id, { text: `📱 DM ${ADMIN_USERNAME} for Airwallex pricing.`, show_alert: true }).catch(() => {});
+                return;
+            }
+            const vccStock = getAirwallexVccStock();
+            const available = vccStock.cards?.length || 0;
+            const maxQuantity = 1;
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Airwallex VCC in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                bot.sendMessage(chatId, `📭 Airwallex VCC is out of stock. Contact ${ADMIN_USERNAME} for a restock.`, {
+                    reply_markup: {
+                        inline_keyboard: [[{ text: `📱 DM ${ADMIN_USERNAME}`, url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }]]
+                    }
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_airwallex_vcc_quantity',
+                payment_method: 'qris',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity,
+                variant_id: variant.id,
+                variant_label: variant.label,
+                price: variant.price
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `📱 Paying via QRIS\n` +
+                `💵 Price: Rp ${formatIDR(variant.price)} per card\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of Airwallex VCC cards you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_gpt_invite_balance' || data === 'confirm_buy_gpt_invite') {
+            const gptInviteStock = getGptInviteStock();
+            const available = gptInviteStock.accounts?.length || 0;
             const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
@@ -9074,11 +9110,11 @@ else if (data.startsWith('claim_gift_')) {
                 inline_keyboard: [
                     [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                     [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
+                    [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
                     [{ text: '💳 VCC Store', callback_data: 'menu_vcc' }],
                     [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                     [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                     [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
-                    [{ text: '🧮 Price Calculator', callback_data: 'open_calculator' }],
                     [{ text: '🎁 Bonus Deals', callback_data: 'view_bonus_deals' }],
                     [{ text: '📦 Stock', callback_data: 'check_stock' }],
                     [{ text: '📝 My Orders', callback_data: 'my_orders' }],
@@ -9773,55 +9809,6 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
         });
     }).catch(() => {});
 }        
-        // Budget calculator
-        else if (state.state === 'awaiting_budget_calc') {
-            const budget = parseInt(text.replace(/\D/g, ''));
-            
-            if (isNaN(budget) || budget < 1) {
-                bot.sendMessage(chatId, '❌ Please enter a valid amount!').catch(() => {});
-                return;
-            }
-            
-            const result = calculateQuantityForBudget(budget);
-            
-            if (result.quantity === 0) {
-                bot.sendMessage(chatId,
-                    `💰 *BUDGET CALCULATION*\n\n` +
-                    `Your Budget: Rp ${formatIDR(budget)}\n\n` +
-                    `❌ Budget too low!\n\n` +
-                    `Minimum price: Rp ${formatIDR(getPricePerUnit(1))}/account`,
-                    { parse_mode: 'Markdown' }
-                ).catch(() => {});
-            } else {
-                const keyboard = {
-                    inline_keyboard: [
-                        [{ text: `🛒 Order ${result.quantity} links`, callback_data: 'order' }],
-                        [{ text: '🧮 Calculate Again', callback_data: 'open_calculator' }],
-                        [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
-                    ]
-                };
-                const bonusQuantity = getBonusQuantity(result.quantity);
-                const totalQuantity = result.quantity + bonusQuantity;
-                const bonusText = bonusQuantity > 0
-                    ? `🎁 Bonus: +${bonusQuantity} links (Total delivered: ${totalQuantity})\n\n`
-                    : '';
-
-                bot.sendMessage(chatId,
-                    `💰 *BUDGET CALCULATION*\n\n` +
-                    `Your Budget: Rp ${formatIDR(budget)}\n\n` +
-                    `✅ You can buy: *${result.quantity} links*\n` +
-                    `💵 Price per account: Rp ${formatIDR(result.pricePerUnit)}\n` +
-                    `💳 Total cost: Rp ${formatIDR(result.price)}\n` +
-                    `💰 Change: Rp ${formatIDR(budget - result.price)}\n\n` +
-                    bonusText +
-                    `🎟️ Use coupon codes for extra discounts!`,
-                    { parse_mode: 'Markdown', reply_markup: keyboard }
-                ).catch(() => {});
-            }
-            
-            delete userStates[chatId];
-        }
-
         else if (state.state === 'awaiting_perplexity_quantity') {
             const quantity = parseInt(text.replace(/\D/g, ''));
             const paymentMethod = state.payment_method || 'balance';
@@ -11061,53 +11048,6 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 ).catch(() => {});
             }
 
-            delete userStates[chatId];
-        }
-        
-        // Quantity calculator
-        else if (state.state === 'awaiting_quantity_calc') {
-            const quantity = parseInt(text.replace(/\D/g, ''));
-            
-            if (isNaN(quantity) || quantity < 1) {
-                bot.sendMessage(chatId, '❌ Please enter a valid number!').catch(() => {});
-                return;
-            }
-            
-            const totalPrice = calculatePrice(quantity);
-            const pricePerUnit = getPricePerUnit(quantity);
-            
-            const pricing = getPricing();
-            const firstRangePrice = pricing[Object.keys(pricing)[0]];
-            const savings = (firstRangePrice - pricePerUnit) * quantity;
-            const bonusQuantity = getBonusQuantity(quantity);
-            const totalQuantity = quantity + bonusQuantity;
-
-            const keyboard = {
-                inline_keyboard: [
-                    [{ text: `🛒 Order ${quantity} links`, callback_data: 'order' }],
-                    [{ text: '🧮 Calculate Again', callback_data: 'open_calculator' }],
-                    [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
-                ]
-            };
-            
-            let savingsText = '';
-            if (savings > 0) {
-                savingsText = `\n💸 You save: Rp ${formatIDR(savings)} vs regular price!\n`;
-            }
-            const bonusText = bonusQuantity > 0
-                ? `\n🎁 Bonus: +${bonusQuantity} links (Total delivered: ${totalQuantity})\n`
-                : '';
-
-            bot.sendMessage(chatId,
-                `📦 *QUANTITY CALCULATION*\n\n` +
-                `Quantity: *${quantity} links*\n\n` +
-                `💵 Price per account: Rp ${formatIDR(pricePerUnit)}\n` +
-                `💰 Total price: *Rp ${formatIDR(totalPrice)}*\n` +
-                `${savingsText}${bonusText}\n` +
-                `🎟️ Use coupon codes for extra discounts!`,
-                { parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
-            
             delete userStates[chatId];
         }
         
@@ -12529,7 +12469,7 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
                 }).catch(() => {});
 
                 bot.sendMessage(ADMIN_TELEGRAM_ID,
-                    `📝 *NEW GPT GO ORDER*\n\n` +
+                    `📝 *NEW CANVA BUSINESS ORDER*\n\n` +
                     `Order ID: #${orderId}\n` +
                     `Customer: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')}\n` +
                     `User ID: ${userId}\n` +
@@ -14110,7 +14050,6 @@ console.log('  💵 Top-Up System (0-100k IDR)');
 console.log('  💰 Admin Add Balance (0-100k IDR)');
 console.log('  📱 GoPay QR Payment Support');
 console.log('  👥 Users List with Tap-to-Copy');
-console.log('  🧮 Smart Price Calculator');
 console.log('  📢 Auto-Broadcast on Stock Updates');
 console.log('  📋 Tap-to-Copy Links Delivery');
 console.log('  💳 Balance-Based Ordering');
