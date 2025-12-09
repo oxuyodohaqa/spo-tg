@@ -1364,59 +1364,32 @@ async function handleQuantityConfirm(query) {
         return;
     }
 
-    // Handle GPT Basics
-    if (picker.product === 'gpt_basic') {
-        await processGptBasicsQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
-        return;
-    }
+    // Handle other products by simulating text input to existing handlers
+    // Set up the state for the text handler to process
+    userStates[chatId] = {
+        state: `awaiting_${picker.product === 'gpt_basic' ? 'gpt' : 
+                         picker.product === 'capcut_basic' ? 'capcut' : 
+                         picker.product === 'canva_business' ? 'canva_business' :
+                         picker.product === 'gpt_go' ? 'gpt_go' :
+                         picker.product === 'gpt_invite' ? 'gpt_invite' :
+                         picker.product === 'gpt_plus' ? 'gpt_plus' :
+                         picker.product === 'alight_motion' ? 'alight' :
+                         picker.product === 'perplexity_ai' ? 'perplexity' :
+                         picker.product === 'account' ? 'account' : 'unknown'}_quantity`,
+        payment_method: picker.payment_method || 'balance',
+        userId: userId,
+        user: query.from,
+        max_quantity: picker.max,
+        variant: picker.variant || 'nw'
+    };
 
-    // Handle CapCut Basics
-    if (picker.product === 'capcut_basic') {
-        await processCapcutBasicsQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
-        return;
-    }
-
-    // Handle GPT Invite
-    if (picker.product === 'gpt_invite') {
-        await processGptInviteQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', picker.variant || 'nw', query.from);
-        return;
-    }
-
-    // Handle GPT Go
-    if (picker.product === 'gpt_go') {
-        await processGptGoQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
-        return;
-    }
-
-    // Handle GPT Plus
-    if (picker.product === 'gpt_plus') {
-        await processGptPlusQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', picker.variant || 'nw', query.from);
-        return;
-    }
-
-    // Handle Canva Business
-    if (picker.product === 'canva_business') {
-        await processCanvaBusinessQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
-        return;
-    }
-
-    // Handle Alight Motion
-    if (picker.product === 'alight_motion') {
-        await processAlightMotionQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
-        return;
-    }
-
-    // Handle Perplexity
-    if (picker.product === 'perplexity_ai') {
-        await processPerplexityQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
-        return;
-    }
-
-    // Handle Spotify Accounts
-    if (picker.product === 'account') {
-        await processAccountQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
-        return;
-    }
+    // Simulate the text message to trigger existing handler
+    bot.emit('message', {
+        chat: { id: chatId },
+        from: query.from,
+        text: String(picker.quantity),
+        message_id: query.message.message_id
+    });
 }
 
 function isAdmin(userId) {
@@ -8424,19 +8397,7 @@ else if (data.startsWith('claim_gift_')) {
             });
         }
 
-        // More payment handlers continue below
-        else if (data === 'CONTINUE_SEARCH') {
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `📱 Paying via QRIS\n` +
-                `💵 Price: Rp ${formatIDR(getGptGoPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of GPT Go accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
-        }
+        // More payment handlers continue below (not yet converted to inline pickers)
 
         else if (data === 'pay_gpt_go_vcc_balance') {
             const vccStock = getGptGoVccStock();
