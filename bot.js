@@ -8349,6 +8349,38 @@ bot.on('callback_query', async (query) => {
             ).catch(() => {});
         }
 
+        else if (data === 'pay_canva_business_balance') {
+            const canvaStock = getCanvaBusinessStock();
+            const available = canvaStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Canva Business in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_canva_business_quantity',
+                payment_method: 'balance',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `💳 Paying with balance\n` +
+                `💵 Price: ${formatCanvaBusinessPriceSummary()}\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of Canva Business accounts you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
         else if (data === 'pay_gpt_qris') {
             const gptStock = getGptBasicsStock();
             const available = gptStock.accounts?.length || 0;
@@ -8382,6 +8414,38 @@ bot.on('callback_query', async (query) => {
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
                 `Send the number of GPT Go VCC cards you want to buy.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'pay_canva_business_qris') {
+            const canvaStock = getCanvaBusinessStock();
+            const available = canvaStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Canva Business in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            userStates[chatId] = {
+                state: 'awaiting_canva_business_quantity',
+                payment_method: 'qris',
+                userId: userId,
+                user: query.from,
+                max_quantity: maxQuantity
+            };
+
+            bot.editMessageText(
+                `🔢 *ENTER QUANTITY*\n\n` +
+                `📱 Paying via QRIS\n` +
+                `💵 Price: ${formatCanvaBusinessPriceSummary()}\n` +
+                `📦 Available: ${available}\n` +
+                `📌 Min 1 | Max ${maxQuantity}\n\n` +
+                `Send the number of Canva Business accounts you want to buy.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
             ).catch(() => {});
         }
