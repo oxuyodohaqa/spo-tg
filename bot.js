@@ -1353,6 +1353,7 @@ async function handleQuantityConfirm(query) {
     const picker = state.picker;
     picker.quantity = Math.max(1, Math.min(picker.quantity || 1, picker.max));
 
+    // Handle VCC products
     if (picker.product === 'gpt_go_vcc') {
         await processGptGoVccQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
         return;
@@ -1360,6 +1361,60 @@ async function handleQuantityConfirm(query) {
 
     if (picker.product === 'airwallex_vcc') {
         await processAirwallexVccQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', picker.variant_id, picker.variant_label, picker.price, query.from);
+        return;
+    }
+
+    // Handle GPT Basics
+    if (picker.product === 'gpt_basic') {
+        await processGptBasicsQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
+        return;
+    }
+
+    // Handle CapCut Basics
+    if (picker.product === 'capcut_basic') {
+        await processCapcutBasicsQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
+        return;
+    }
+
+    // Handle GPT Invite
+    if (picker.product === 'gpt_invite') {
+        await processGptInviteQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', picker.variant || 'nw', query.from);
+        return;
+    }
+
+    // Handle GPT Go
+    if (picker.product === 'gpt_go') {
+        await processGptGoQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
+        return;
+    }
+
+    // Handle GPT Plus
+    if (picker.product === 'gpt_plus') {
+        await processGptPlusQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', picker.variant || 'nw', query.from);
+        return;
+    }
+
+    // Handle Canva Business
+    if (picker.product === 'canva_business') {
+        await processCanvaBusinessQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
+        return;
+    }
+
+    // Handle Alight Motion
+    if (picker.product === 'alight_motion') {
+        await processAlightMotionQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
+        return;
+    }
+
+    // Handle Perplexity
+    if (picker.product === 'perplexity_ai') {
+        await processPerplexityQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
+        return;
+    }
+
+    // Handle Spotify Accounts
+    if (picker.product === 'account') {
+        await processAccountQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
         return;
     }
 }
@@ -8188,23 +8243,15 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_gpt_quantity',
+            showQuantityPicker(query.message, {
+                product: 'gpt_basic',
+                label: 'GPT Basics Account',
+                unitPrice: getGptBasicsPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'balance',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `💳 Paying with balance\n` +
-                `💵 Price: Rp ${formatIDR(getGptBasicsPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of GPT Basics accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_gpt_basics'
+            });
         }
 
         else if (data === 'pay_capcut_balance' || data === 'confirm_buy_capcut') {
@@ -8220,23 +8267,15 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_capcut_quantity',
+            showQuantityPicker(query.message, {
+                product: 'capcut_basic',
+                label: 'CapCut Basics Account',
+                unitPrice: getCapcutBasicsPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'balance',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `💳 Paying with balance\n` +
-                `💵 Price: Rp ${formatIDR(getCapcutBasicsPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of CapCut Basics accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_capcut_basics'
+            });
         }
 
         else if (data === 'pay_canva_business_balance') {
@@ -8252,23 +8291,15 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_canva_business_quantity',
+            showQuantityPicker(query.message, {
+                product: 'canva_business',
+                label: 'Canva Business Account',
+                unitPrice: getCanvaBusinessPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'balance',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `💳 Paying with balance\n` +
-                `💵 Price: ${formatCanvaBusinessPriceSummary()}\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of Canva Business accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_canva_business'
+            });
         }
 
         else if (data === 'pay_gpt_qris') {
@@ -8284,23 +8315,15 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_gpt_quantity',
+            showQuantityPicker(query.message, {
+                product: 'gpt_basic',
+                label: 'GPT Basics Account',
+                unitPrice: getGptBasicsPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'qris',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `📱 Paying via QRIS\n` +
-                `💵 Price: Rp ${formatIDR(getGptBasicsPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of GPT Basics accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_gpt_basics'
+            });
         }
 
         else if (data === 'pay_capcut_qris') {
@@ -8316,23 +8339,15 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_capcut_quantity',
+            showQuantityPicker(query.message, {
+                product: 'capcut_basic',
+                label: 'CapCut Basics Account',
+                unitPrice: getCapcutBasicsPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'qris',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `📱 Paying via QRIS\n` +
-                `💵 Price: Rp ${formatIDR(getCapcutBasicsPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of CapCut Basics accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_capcut_basics'
+            });
         }
 
         else if (data === 'pay_canva_business_qris') {
@@ -8348,24 +8363,18 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_canva_business_quantity',
+            showQuantityPicker(query.message, {
+                product: 'canva_business',
+                label: 'Canva Business Account',
+                unitPrice: getCanvaBusinessPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'qris',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `📱 Paying via QRIS\n` +
-                `💵 Price: ${formatCanvaBusinessPriceSummary()}\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of Canva Business accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_canva_business'
+            });
         }
+
+        // Moved above - pay_capcut_qris and pay_canva_business_qris now use inline quantity pickers
 
         else if (data === 'pay_gpt_go_balance' || data === 'confirm_buy_gpt_go') {
             const gptGoStock = getGptGoStock();
@@ -8380,23 +8389,15 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_gpt_go_quantity',
+            showQuantityPicker(query.message, {
+                product: 'gpt_go',
+                label: 'GPT Go Account',
+                unitPrice: getGptGoPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'balance',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `💳 Paying with balance\n` +
-                `💵 Price: Rp ${formatIDR(getGptGoPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of GPT Go accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_gpt_go'
+            });
         }
 
         else if (data === 'pay_gpt_go_qris') {
@@ -8412,13 +8413,19 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_gpt_go_quantity',
+            showQuantityPicker(query.message, {
+                product: 'gpt_go',
+                label: 'GPT Go Account',
+                unitPrice: getGptGoPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'qris',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
+                back_callback: 'buy_gpt_go'
+            });
+        }
+
+        // More payment handlers continue below
+        else if (data === 'CONTINUE_SEARCH') {
 
             bot.editMessageText(
                 `🔢 *ENTER QUANTITY*\n\n` +
