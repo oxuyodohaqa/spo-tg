@@ -1265,6 +1265,21 @@ function formatIDR(amount) {
     return new Intl.NumberFormat('id-ID').format(amount);
 }
 
+// Product code to quantity state name mapping for inline quantity pickers
+const PRODUCT_TO_QUANTITY_STATE = {
+    'gpt_basic': 'gpt',
+    'capcut_basic': 'capcut',
+    'canva_business': 'canva_business',
+    'gpt_go': 'gpt_go',
+    'gpt_go_vcc': 'gpt_go_vcc',
+    'airwallex_vcc': 'airwallex_vcc',
+    'gpt_invite': 'gpt_invite',
+    'gpt_plus': 'gpt_plus',
+    'alight_motion': 'alight',
+    'perplexity_ai': 'perplexity',
+    'account': 'account'
+};
+
 function buildQuantityKeyboard(picker) {
     return {
         inline_keyboard: [
@@ -1353,6 +1368,7 @@ async function handleQuantityConfirm(query) {
     const picker = state.picker;
     picker.quantity = Math.max(1, Math.min(picker.quantity || 1, picker.max));
 
+    // Handle VCC products
     if (picker.product === 'gpt_go_vcc') {
         await processGptGoVccQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', query.from);
         return;
@@ -1362,6 +1378,37 @@ async function handleQuantityConfirm(query) {
         await processAirwallexVccQuantity(chatId, userId, picker.quantity, picker.payment_method || 'balance', picker.variant_id, picker.variant_label, picker.price, query.from);
         return;
     }
+
+    // Handle other products by delegating to existing text handlers
+    const stateName = PRODUCT_TO_QUANTITY_STATE[picker.product];
+
+    if (!stateName) {
+        console.error(`Unknown product type in quantity picker: ${picker.product}`);
+        bot.sendMessage(chatId, '❌ An error occurred. Please try again or contact support.').catch(() => {});
+        delete userStates[chatId];
+        return;
+    }
+
+    // Set up the state for the text handler to process
+    userStates[chatId] = {
+        state: `awaiting_${stateName}_quantity`,
+        payment_method: picker.payment_method || 'balance',
+        userId: userId,
+        user: query.from,
+        max_quantity: picker.max,
+        variant: picker.variant || 'nw'
+    };
+
+    // Trigger existing handler by emitting a message event with the quantity
+    // Note: This approach reuses existing tested order processing logic to avoid code duplication.
+    // While emitting synthetic events isn't ideal for testing, it prevents duplicating complex
+    // order processing logic that includes balance checks, stock validation, payment handling, etc.
+    bot.emit('message', {
+        chat: { id: chatId },
+        from: query.from,
+        text: String(picker.quantity),
+        message_id: query.message.message_id
+    });
 }
 
 function isAdmin(userId) {
@@ -4250,10 +4297,13 @@ bot.on('callback_query', async (query) => {
             const isCapcut = isCapcutBasicsOrder(order);
             const isGptInvite = isGptInviteOrder(order);
             const isGptGo = isGptGoOrder(order);
+            const isGptGoVcc = isGptGoVccOrder(order);
+            const isAirwallexVcc = isAirwallexVccOrder(order);
             const isGptPlus = isGptPlusOrder(order);
+            const isCanvaBusiness = isCanvaBusinessOrder(order);
             const isAlight = isAlightMotionOrder(order);
             const isPerplexity = isPerplexityOrder(order);
-            const isCredential = isAccountOrder || isGptOrder || isCapcut || isGptInvite || isGptGo || isGptPlus || isAlight || isPerplexity;
+            const isCredential = isAccountOrder || isGptOrder || isCapcut || isGptInvite || isGptGo || isGptGoVcc || isAirwallexVcc || isGptPlus || isCanvaBusiness || isAlight || isPerplexity;
 
             if (!order) {
                 bot.answerCallbackQuery(query.id, {
@@ -4280,13 +4330,19 @@ bot.on('callback_query', async (query) => {
                                     ? 'GPT Business via Invite account(s)'
                                     : isGptGo
                                         ? 'GPT Go account(s)'
-                                        : isGptPlus
-                                            ? 'GPT Plus account(s)'
-                                            : isAlight
-                                                ? 'Alight Motion account(s)'
-                                                : isPerplexity
-                                                    ? 'Perplexity link(s)'
-                                                    : 'links'
+                                        : isGptGoVcc
+                                            ? 'GPT Go VCC card(s)'
+                                            : isAirwallexVcc
+                                                ? 'Airwallex VCC card(s)'
+                                                : isGptPlus
+                                                    ? 'GPT Plus account(s)'
+                                                    : isCanvaBusiness
+                                                        ? 'Canva Business account(s)'
+                                                        : isAlight
+                                                            ? 'Alight Motion account(s)'
+                                                            : isPerplexity
+                                                                ? 'Perplexity link(s)'
+                                                                : 'links'
                 }${bonusNote}...`,
                 {
                     chat_id: chatId,
@@ -4312,8 +4368,17 @@ bot.on('callback_query', async (query) => {
             } else if (isGptGo) {
                 const result = await deliverGptGo(order.user_id, orderId, order.quantity);
                 delivered = result.success;
+            } else if (isGptGoVcc) {
+                const result = await deliverGptGoVcc(order.user_id, orderId, order.quantity, order.original_price || getGptGoVccPrice());
+                delivered = result.success;
+            } else if (isAirwallexVcc) {
+                const result = await deliverAirwallexVcc(order.user_id, orderId, order.quantity, order.original_price || getAirwallexVccPrice());
+                delivered = result.success;
             } else if (isGptPlus) {
                 const result = await deliverGptPlus(order.user_id, orderId, order.quantity, order.variant || 'nw');
+                delivered = result.success;
+            } else if (isCanvaBusiness) {
+                const result = await deliverCanvaBusiness(order.user_id, orderId, order.quantity, order.original_price || getCanvaBusinessPrice());
                 delivered = result.success;
             } else if (isAlight) {
                 const result = await deliverAlightMotion(order.user_id, orderId, order.quantity);
@@ -4355,13 +4420,19 @@ bot.on('callback_query', async (query) => {
                                     ? 'GPT Business via Invite sent!'
                                     : isGptGo
                                         ? 'GPT Go sent!'
-                                        : isGptPlus
-                                            ? 'GPT Plus sent!'
-                                            : isAlight
-                                                ? 'Alight Motion sent!'
-                                                : isPerplexity
-                                                    ? 'Perplexity links sent!'
-                                                    : 'links sent!'
+                                        : isGptGoVcc
+                                            ? 'GPT Go VCC sent!'
+                                            : isAirwallexVcc
+                                                ? 'Airwallex VCC sent!'
+                                                : isGptPlus
+                                                    ? 'GPT Plus sent!'
+                                                    : isCanvaBusiness
+                                                        ? 'Canva Business sent!'
+                                                        : isAlight
+                                                            ? 'Alight Motion sent!'
+                                                            : isPerplexity
+                                                                ? 'Perplexity links sent!'
+                                                                : 'links sent!'
                     }\n` +
                     `⏰ ${getCurrentDateTime()}`,
                     {
@@ -4384,18 +4455,28 @@ bot.on('callback_query', async (query) => {
                                     ? (getGptInviteStock().accounts || []).length
                                     : isGptGo
                                         ? (getGptGoStock().accounts || []).length
-                                        : isGptPlus
-                                            ? (getGptPlusStock().accounts || []).length
-                                            : isAlight
-                                                ? (getAlightMotionStock().accounts || []).length
-                                                : isPerplexity
-                                                    ? (getPerplexityStock().links || []).length
-                                                    : getStock().links.length
+                                        : isGptGoVcc
+                                            ? (getGptGoVccStock().cards || []).length
+                                            : isAirwallexVcc
+                                                ? (getAirwallexVccStock().cards || []).length
+                                                : isGptPlus
+                                                    ? (getGptPlusStock().accounts || []).length
+                                                    : isCanvaBusiness
+                                                        ? (getCanvaBusinessStock().accounts || []).length
+                                                        : isAlight
+                                                            ? (getAlightMotionStock().accounts || []).length
+                                                            : isPerplexity
+                                                                ? (getPerplexityStock().links || []).length
+                                                                : getStock().links.length
                     }\n\n` +
                     (isAccountOrder
                         ? 'Add more accounts!'
                         : isGptOrder || isGptInvite || isGptGo || isGptPlus
                             ? 'Add more GPT stock!'
+                            : isGptGoVcc || isAirwallexVcc
+                                ? 'Add more VCC cards!'
+                            : isCanvaBusiness
+                                ? 'Add more Canva Business accounts!'
                             : isPerplexity
                                 ? 'Add more Perplexity links!'
                                 : 'Add more links!'),
@@ -8154,23 +8235,15 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_gpt_quantity',
+            showQuantityPicker(query.message, {
+                product: 'gpt_basic',
+                label: 'GPT Basics Account',
+                unitPrice: getGptBasicsPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'balance',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `💳 Paying with balance\n` +
-                `💵 Price: Rp ${formatIDR(getGptBasicsPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of GPT Basics accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_gpt_basics'
+            });
         }
 
         else if (data === 'pay_capcut_balance' || data === 'confirm_buy_capcut') {
@@ -8186,23 +8259,15 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_capcut_quantity',
+            showQuantityPicker(query.message, {
+                product: 'capcut_basic',
+                label: 'CapCut Basics Account',
+                unitPrice: getCapcutBasicsPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'balance',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `💳 Paying with balance\n` +
-                `💵 Price: Rp ${formatIDR(getCapcutBasicsPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of CapCut Basics accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_capcut_basics'
+            });
         }
 
         else if (data === 'pay_canva_business_balance') {
@@ -8218,23 +8283,15 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_canva_business_quantity',
+            showQuantityPicker(query.message, {
+                product: 'canva_business',
+                label: 'Canva Business Account',
+                unitPrice: getCanvaBusinessPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'balance',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `💳 Paying with balance\n` +
-                `💵 Price: ${formatCanvaBusinessPriceSummary()}\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of Canva Business accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_canva_business'
+            });
         }
 
         else if (data === 'pay_gpt_qris') {
@@ -8250,23 +8307,15 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_gpt_quantity',
+            showQuantityPicker(query.message, {
+                product: 'gpt_basic',
+                label: 'GPT Basics Account',
+                unitPrice: getGptBasicsPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'qris',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `📱 Paying via QRIS\n` +
-                `💵 Price: Rp ${formatIDR(getGptBasicsPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of GPT Basics accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_gpt_basics'
+            });
         }
 
         else if (data === 'pay_capcut_qris') {
@@ -8282,23 +8331,15 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_capcut_quantity',
+            showQuantityPicker(query.message, {
+                product: 'capcut_basic',
+                label: 'CapCut Basics Account',
+                unitPrice: getCapcutBasicsPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'qris',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `📱 Paying via QRIS\n` +
-                `💵 Price: Rp ${formatIDR(getCapcutBasicsPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of CapCut Basics accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_capcut_basics'
+            });
         }
 
         else if (data === 'pay_canva_business_qris') {
@@ -8314,24 +8355,18 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_canva_business_quantity',
+            showQuantityPicker(query.message, {
+                product: 'canva_business',
+                label: 'Canva Business Account',
+                unitPrice: getCanvaBusinessPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'qris',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `📱 Paying via QRIS\n` +
-                `💵 Price: ${formatCanvaBusinessPriceSummary()}\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of Canva Business accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_canva_business'
+            });
         }
+
+        // Moved above - pay_capcut_qris and pay_canva_business_qris now use inline quantity pickers
 
         else if (data === 'pay_gpt_go_balance' || data === 'confirm_buy_gpt_go') {
             const gptGoStock = getGptGoStock();
@@ -8346,23 +8381,15 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_gpt_go_quantity',
+            showQuantityPicker(query.message, {
+                product: 'gpt_go',
+                label: 'GPT Go Account',
+                unitPrice: getGptGoPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'balance',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `💳 Paying with balance\n` +
-                `💵 Price: Rp ${formatIDR(getGptGoPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of GPT Go accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_gpt_go'
+            });
         }
 
         else if (data === 'pay_gpt_go_qris') {
@@ -8378,24 +8405,18 @@ else if (data.startsWith('claim_gift_')) {
                 return;
             }
 
-            userStates[chatId] = {
-                state: 'awaiting_gpt_go_quantity',
+            showQuantityPicker(query.message, {
+                product: 'gpt_go',
+                label: 'GPT Go Account',
+                unitPrice: getGptGoPrice(),
+                max: maxQuantity,
+                quantity: 1,
                 payment_method: 'qris',
-                userId: userId,
-                user: query.from,
-                max_quantity: maxQuantity
-            };
-
-            bot.editMessageText(
-                `🔢 *ENTER QUANTITY*\n\n` +
-                `📱 Paying via QRIS\n` +
-                `💵 Price: Rp ${formatIDR(getGptGoPrice())} per account\n` +
-                `📦 Available: ${available}\n` +
-                `📌 Min 1 | Max ${maxQuantity}\n\n` +
-                `Send the number of GPT Go accounts you want to buy.`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
-            ).catch(() => {});
+                back_callback: 'buy_gpt_go'
+            });
         }
+
+        // More payment handlers continue below (not yet converted to inline pickers)
 
         else if (data === 'pay_gpt_go_vcc_balance') {
             const vccStock = getGptGoVccStock();
