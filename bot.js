@@ -68,6 +68,8 @@ const CAPCUT_BASICS_FILE = 'capcut_basics.json';
 const GPT_INVITE_FILE = 'gpt_invite.json';
 const GPT_GO_FILE = 'gpt_go.json';
 const GPT_PLUS_FILE = 'gpt_plus.json';
+const GPT_GO_VCC_FILE = 'gpt_go_vcc.json';
+const AIRWALLEX_VCC_FILE = 'airwallex_vcc.json';
 const ALIGHT_MOTION_FILE = 'alight_motion.json';
 const PERPLEXITY_FILE = 'perplexity_accounts.json';
 
@@ -231,6 +233,7 @@ function buildAdminMainKeyboard() {
             [{ text: '🎞️ CapCut Basics', callback_data: 'admin_capcut_basics' }],
             [{ text: '📩 GPT via Invite', callback_data: 'admin_gpt_invite' }, { text: '🎬 Alight Motion', callback_data: 'admin_alight_motion' }],
             [{ text: '🚀 GPT Go', callback_data: 'admin_gpt_go' }, { text: '✨ GPT Plus', callback_data: 'admin_gpt_plus' }],
+            [{ text: '💳 GPT Go VCC', callback_data: 'admin_gpt_go_vcc' }, { text: '🌐 Airwallex VCC', callback_data: 'admin_airwallex_vcc' }],
             [{ text: '🧠 Perplexity AI', callback_data: 'admin_perplexity' }, { text: '💵 Pricing', callback_data: 'admin_pricing' }],
             [{ text: '🏷️ Product Labels & Prices', callback_data: 'admin_product_settings' }],
             [{ text: '🎟️ Coupons', callback_data: 'admin_coupons' }, { text: '📋 Pending Top-ups', callback_data: 'admin_pending_topups' }],
@@ -339,6 +342,22 @@ function normalizeAccountStock(rawStock = {}) {
     return { accounts: [] };
 }
 
+function normalizeCardStock(rawStock = {}) {
+    if (Array.isArray(rawStock.cards)) {
+        return { cards: rawStock.cards.filter(card => typeof card === 'string' && card.trim().length > 0) };
+    }
+
+    if (typeof rawStock.cards === 'string') {
+        const cards = rawStock.cards
+            .split('\n')
+            .map(card => card.trim())
+            .filter(Boolean);
+        return { cards };
+    }
+
+    return { cards: [] };
+}
+
 function getGptBasicsStock() {
     return normalizeAccountStock(loadJSON(GPT_BASICS_FILE, { accounts: [] }));
 }
@@ -394,6 +413,22 @@ function updateAlightMotionStock(accounts = []) {
 
 function getPerplexityStock() {
     return loadJSON(PERPLEXITY_FILE, { links: [] });
+}
+
+function getGptGoVccStock() {
+    return normalizeCardStock(loadJSON(GPT_GO_VCC_FILE, { cards: [] }));
+}
+
+function updateGptGoVccStock(cards = []) {
+    saveJSON(GPT_GO_VCC_FILE, { cards });
+}
+
+function getAirwallexVccStock() {
+    return normalizeCardStock(loadJSON(AIRWALLEX_VCC_FILE, { cards: [] }));
+}
+
+function updateAirwallexVccStock(cards = []) {
+    saveJSON(AIRWALLEX_VCC_FILE, { cards });
 }
 
 function getPerplexityUnitPrice(quantity = 1) {
@@ -1979,6 +2014,32 @@ function broadcastPerplexityRestock(addedCount, totalCount) {
     return broadcastToAll(message, { parse_mode: 'Markdown' });
 }
 
+function broadcastGptGoVccRestock(addedCount, totalCount) {
+    const message = [
+        '💳 *GPT GO VCC RESTOCKED!*',
+        `📤 Added: *${addedCount}* card${addedCount > 1 ? 's' : ''}`,
+        `🚀 Total Cards: *${totalCount}* ready for delivery`,
+        '',
+        '💬 DM admin for QRIS payment and card drop.',
+        '⚡ Limited VCC stock—act fast!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastAirwallexVccRestock(addedCount, totalCount) {
+    const message = [
+        '🌐 *AIRWALLEX VCC RESTOCKED!*',
+        `📤 Added: *${addedCount}* card${addedCount > 1 ? 's' : ''}`,
+        `💳 Total Cards: *${totalCount}* ready for delivery`,
+        '',
+        '💬 DM admin for QRIS payment and card drop.',
+        '⚡ Grab an Airwallex card before stock runs out!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
 function broadcastRestock(addedCount = 0, newTotal = 0) {
     const pricing = getPricing();
     const pricingText = Object.keys(pricing).slice(0, 4).map(range =>
@@ -1997,6 +2058,8 @@ function broadcastRestock(addedCount = 0, newTotal = 0) {
         `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite Accounts'))}: *${(getGptInviteStock().accounts || []).length}*`,
         `🚀 ${escapeMarkdown(getProductLabel('gpt_go', 'GPT Go Plan Accounts'))}: *${(getGptGoStock().accounts || []).length}*`,
         `✨ ${escapeMarkdown(getProductLabel('gpt_plus', 'GPT Plus Plan Accounts'))}: *${(getGptPlusStock().accounts || []).length}*`,
+        `💳 GPT Go VCC Cards: *${(getGptGoVccStock().cards || []).length}*`,
+        `🌐 Airwallex VCC Cards: *${(getAirwallexVccStock().cards || []).length}*`,
         `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Accounts'))}: *${(getAlightMotionStock().accounts || []).length}*`,
         `🧠 Perplexity Links: *${(getPerplexityStock().links || []).length}*`
     ].join('\n');
@@ -2928,9 +2991,11 @@ bot.on('document', (msg) => {
         const isGptPlusUpload = uploadMode === 'awaiting_gpt_plus_upload';
         const isAlightUpload = uploadMode === 'awaiting_alight_upload';
         const isPerplexityUpload = uploadMode === 'awaiting_perplexity_upload';
-        const isLinkUpload = uploadMode === 'awaiting_stock_upload' || (!uploadMode && !isGptUpload && !isCapcutUpload && !isPerplexityUpload && !isGptInviteUpload && !isAlightUpload && !isGptGoUpload && !isGptPlusUpload);
+        const isGptGoVccUpload = uploadMode === 'awaiting_gpt_go_vcc_upload';
+        const isAirwallexVccUpload = uploadMode === 'awaiting_airwallex_vcc_upload';
+        const isLinkUpload = uploadMode === 'awaiting_stock_upload' || (!uploadMode && !isGptUpload && !isCapcutUpload && !isPerplexityUpload && !isGptInviteUpload && !isAlightUpload && !isGptGoUpload && !isGptPlusUpload && !isGptGoVccUpload && !isAirwallexVccUpload);
 
-        if (!isAccountUpload && !isLinkUpload && !isGptUpload && !isCapcutUpload && !isPerplexityUpload && !isGptInviteUpload && !isAlightUpload && !isGptGoUpload && !isGptPlusUpload) return;
+        if (!isAccountUpload && !isLinkUpload && !isGptUpload && !isCapcutUpload && !isPerplexityUpload && !isGptInviteUpload && !isAlightUpload && !isGptGoUpload && !isGptPlusUpload && !isGptGoVccUpload && !isAirwallexVccUpload) return;
 
         const document = msg.document;
         
@@ -2939,7 +3004,7 @@ bot.on('document', (msg) => {
             return;
         }
         
-        const uploadingText = (isAccountUpload || isGptUpload || isCapcutUpload || isPerplexityUpload || isGptInviteUpload || isAlightUpload || isGptGoUpload || isGptPlusUpload) ? '⏳ Uploading accounts...' : '⏳ Uploading links...';
+        const uploadingText = (isAccountUpload || isGptUpload || isCapcutUpload || isPerplexityUpload || isGptInviteUpload || isAlightUpload || isGptGoUpload || isGptPlusUpload || isGptGoVccUpload || isAirwallexVccUpload) ? '⏳ Uploading accounts...' : '⏳ Uploading links...';
 
         bot.sendMessage(chatId, uploadingText).then(statusMsg => {
             bot.getFile(document.file_id).then(file => {
@@ -2952,7 +3017,7 @@ bot.on('document', (msg) => {
                     res.on('end', () => {
                         const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-                        if (isAccountUpload || isGptUpload || isCapcutUpload || isPerplexityUpload || isGptInviteUpload || isAlightUpload || isGptGoUpload || isGptPlusUpload) {
+                        if (isAccountUpload || isGptUpload || isCapcutUpload || isPerplexityUpload || isGptInviteUpload || isAlightUpload || isGptGoUpload || isGptPlusUpload || isGptGoVccUpload || isAirwallexVccUpload) {
                             if (lines.length === 0) {
                                 bot.editMessageText(
                                     '❌ No valid accounts found! Add one credential per line.',
@@ -3057,6 +3122,48 @@ bot.on('document', (msg) => {
                                     `✅ *GPT PLUS UPLOADED!*\n\n` +
                                     `📤 Added: ${lines.length} accounts\n` +
                                     `✨ Total GPT Plus: ${merged.length}\n\n` +
+                                    `Thank you!`,
+                                    {
+                                        chat_id: chatId,
+                                        message_id: statusMsg.message_id,
+                                        parse_mode: 'Markdown'
+                                    }
+                                ).catch(() => {});
+
+                                delete userStates[chatId];
+                                return;
+                            } else if (isGptGoVccUpload) {
+                                const gptGoVccStock = getGptGoVccStock();
+                                const merged = [...(gptGoVccStock.cards || []), ...lines];
+                                updateGptGoVccStock(merged);
+
+                                broadcastGptGoVccRestock(lines.length, merged.length).catch(() => {});
+
+                                bot.editMessageText(
+                                    `✅ *GPT GO VCC UPLOADED!*\\n\\n` +
+                                    `📤 Added: ${lines.length} cards\\n` +
+                                    `💳 Total GPT Go VCC: ${merged.length}\\n\\n` +
+                                    `Thank you!`,
+                                    {
+                                        chat_id: chatId,
+                                        message_id: statusMsg.message_id,
+                                        parse_mode: 'Markdown'
+                                    }
+                                ).catch(() => {});
+
+                                delete userStates[chatId];
+                                return;
+                            } else if (isAirwallexVccUpload) {
+                                const airwallexVccStock = getAirwallexVccStock();
+                                const merged = [...(airwallexVccStock.cards || []), ...lines];
+                                updateAirwallexVccStock(merged);
+
+                                broadcastAirwallexVccRestock(lines.length, merged.length).catch(() => {});
+
+                                bot.editMessageText(
+                                    `✅ *AIRWALLEX VCC UPLOADED!*\\n\\n` +
+                                    `📤 Added: ${lines.length} cards\\n` +
+                                    `🌐 Total Airwallex VCC: ${merged.length}\\n\\n` +
                                     `Thank you!`,
                                     {
                                         chat_id: chatId,
@@ -4639,6 +4746,50 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        else if (data === 'admin_gpt_go_vcc') {
+            if (!isAdmin(userId)) return;
+
+            const gptGoVccStock = getGptGoVccStock();
+            const available = gptGoVccStock.cards?.length || 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '📤 Upload GPT Go VCC File', callback_data: 'upload_gpt_go_vcc_instruction' }],
+                    [{ text: '📊 Check GPT Go VCC Stock', callback_data: 'check_gpt_go_vcc_stock' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `💳 *GPT GO VCC INVENTORY*\\n\\n` +
+                `📦 Cards available: ${available}\\n\\n` +
+                `Use the options below to upload or check stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'admin_airwallex_vcc') {
+            if (!isAdmin(userId)) return;
+
+            const airwallexVccStock = getAirwallexVccStock();
+            const available = airwallexVccStock.cards?.length || 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '📤 Upload Airwallex VCC File', callback_data: 'upload_airwallex_vcc_instruction' }],
+                    [{ text: '📊 Check Airwallex VCC Stock', callback_data: 'check_airwallex_vcc_stock' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🌐 *AIRWALLEX VCC INVENTORY*\\n\\n` +
+                `📦 Cards available: ${available}\\n\\n` +
+                `Use the options below to upload or check stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
         else if (data === 'admin_alight_motion') {
             if (!isAdmin(userId)) return;
 
@@ -4785,6 +4936,38 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        else if (data === 'upload_gpt_go_vcc_instruction') {
+            if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_gpt_go_vcc_upload' };
+
+            bot.sendMessage(chatId,
+                `📤 *UPLOAD GPT GO VCC*\\n\\n` +
+                `Send a .txt file now with one card per line.\\n\\n` +
+                `Example:\n` +
+                `4111 1111 1111 1111|12|28|123\n\\n` +
+                `Keep each VCC on its own line.\\n` +
+                `💡 Uploads auto-broadcast the restock to users.`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'upload_airwallex_vcc_instruction') {
+            if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_airwallex_vcc_upload' };
+
+            bot.sendMessage(chatId,
+                `📤 *UPLOAD AIRWALLEX VCC*\\n\\n` +
+                `Send a .txt file now with one Airwallex card per line.\\n\\n` +
+                `Example:\n` +
+                `4111 1111 1111 1111|12|28|123\n\\n` +
+                `Keep each VCC on its own line.\\n` +
+                `💡 Uploads auto-broadcast the restock to users.`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
         else if (data === 'upload_alight_instruction') {
             if (!isAdmin(userId)) return;
 
@@ -4886,6 +5069,30 @@ else if (data.startsWith('claim_gift_')) {
 
             bot.answerCallbackQuery(query.id, {
                 text: `📦 GPT Plus available: ${available}`,
+                show_alert: true
+            }).catch(() => {});
+        }
+
+        else if (data === 'check_gpt_go_vcc_stock') {
+            if (!isAdmin(userId)) return;
+
+            const gptGoVccStock = getGptGoVccStock();
+            const available = gptGoVccStock.cards?.length || 0;
+
+            bot.answerCallbackQuery(query.id, {
+                text: `📦 GPT Go VCC available: ${available}`,
+                show_alert: true
+            }).catch(() => {});
+        }
+
+        else if (data === 'check_airwallex_vcc_stock') {
+            if (!isAdmin(userId)) return;
+
+            const airwallexVccStock = getAirwallexVccStock();
+            const available = airwallexVccStock.cards?.length || 0;
+
+            bot.answerCallbackQuery(query.id, {
+                text: `📦 Airwallex VCC available: ${available}`,
                 show_alert: true
             }).catch(() => {});
         }
@@ -6737,6 +6944,8 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: `🤖 ${getProductLabel('gpt_basic', 'GPT Basics Accounts')} (Rp ${formatIDR(getGptBasicsPrice())})`, callback_data: 'buy_gpt_basics' }],
                     [{ text: `📩 ${getProductLabel('gpt_invite', 'GPT Business via Invite')} (${formatGptInvitePriceSummary()})`, callback_data: 'buy_gpt_invite' }],
                     [{ text: `🚀 ${getProductLabel('gpt_go', 'GPT Go')} (${formatGptGoPriceSummary()})`, callback_data: 'buy_gpt_go' }],
+                    [{ text: '💳 GPT Go VCC', callback_data: 'buy_gpt_go_vcc' }],
+                    [{ text: '🌐 Airwallex VCC', callback_data: 'buy_airwallex_vcc' }],
                     [{ text: `✨ ${getProductLabel('gpt_plus', 'GPT Plus')} (${formatGptPlusPriceSummary()})`, callback_data: 'buy_gpt_plus' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
@@ -6745,6 +6954,60 @@ else if (data.startsWith('claim_gift_')) {
             bot.editMessageText(
                 `🤖 *GPT OPTIONS*\n\n` +
                 `Choose a GPT product to buy from stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'canva_business') {
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '💬 Chat Admin', url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🎨 *CANVA BUSINESS ACCOUNTS*\n\n` +
+                `Price: Rp 1.800 per account.\n` +
+                `Upload your Canva Business accounts and sell them directly through the bot.\n\n` +
+                `Contact ${ADMIN_USERNAME} to confirm your order, get the QRIS code, and pay like other products.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
+        else if (data === 'buy_gpt_go_vcc' || data === 'buy_airwallex_vcc') {
+            const isGoVcc = data === 'buy_gpt_go_vcc';
+            const label = isGoVcc ? 'GPT Go VCC' : 'Airwallex VCC';
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '💬 Chat Admin', url: `https://t.me/${ADMIN_USERNAME.replace('@', '')}` }],
+                    [{ text: '🔙 Back', callback_data: 'menu_gpt' }]
+                ]
+            };
+
+            const fulfillmentNote = isGoVcc
+                ? `📦 Delivery: Admin shares your GPT Go card number, expiry month/year, and CVV so you can use it by plan (card/month/year/CVV uploaded).`
+                : `📦 Delivery: Admin provides the Airwallex card number and CVV. Expiry is default 12/28 for all cards.`;
+
+            bot.editMessageText(
+                `💳 *${label}*\n\n` +
+                `✨ VCC AIRWALLEX — FRANCE 🇫🇷\n\n` +
+                `🔥 VCC for DigitalOcean  — \[5k]\n` +
+                `🔥 VCC for PayPal        — \[1k]\n` +
+                `🔥 VCC for AWS           — \[1k]\n` +
+                `🔥 VCC for Other Clouds  — \[3k]\n\n` +
+                `🔥 VCC for ChatGPT       — \[1k]\n` +
+                `🔥 VCC for Spotify       — \[3k]\n` +
+                `🔥 VCC for Gemini        — \[1k]\n\n` +
+                `🔥 VCC for Premium Apps:\n` +
+                `    Deepl, Surfshark, CapCut,\n` +
+                `    ExpressVPN, Cursor, Canva, etc.\n` +
+                `    — [price]\n\n` +
+                `🔥 VCC for Discord       — \[3k]\n\n` +
+                `${fulfillmentNote}\n\n` +
+                `❓ Need something not listed?\n\n` +
+                `✨ Custom requests available.\n\n` +
+                `Orders are handled manually. Contact ${ADMIN_USERNAME} to finalize pricing, request the QRIS code, and pay like other products.`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -6881,6 +7144,7 @@ else if (data.startsWith('claim_gift_')) {
                 inline_keyboard: [
                     [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                     [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
+                    [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
                     [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                     [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                     [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
@@ -8195,6 +8459,7 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '📈 Analytics', callback_data: 'admin_analytics' }, { text: '📦 Stock', callback_data: 'admin_stock' }],
                     [{ text: '🔑 Accounts', callback_data: 'admin_accounts' }, { text: '🤖 GPT Basics', callback_data: 'admin_gpt_basics' }],
                     [{ text: '📩 GPT via Invite', callback_data: 'admin_gpt_invite' }, { text: '🎬 Alight Motion', callback_data: 'admin_alight_motion' }],
+                    [{ text: '💳 GPT Go VCC', callback_data: 'admin_gpt_go_vcc' }, { text: '🌐 Airwallex VCC', callback_data: 'admin_airwallex_vcc' }],
                     [{ text: '🧠 Perplexity AI', callback_data: 'admin_perplexity' }, { text: '💵 Pricing', callback_data: 'admin_pricing' }],
                     [{ text: '🏷️ Product Labels & Prices', callback_data: 'admin_product_settings' }],
                     [{ text: '🎟️ Coupons', callback_data: 'admin_coupons' }, { text: '📋 Pending Top-ups', callback_data: 'admin_pending_topups' }],
