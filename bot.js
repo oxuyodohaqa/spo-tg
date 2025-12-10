@@ -164,6 +164,17 @@ function isRateLimited(userId) {
 // HELPER FUNCTIONS
 // ============================================
 
+const fileCache = new Map();
+
+function updateFileCache(filename, data) {
+    try {
+        const stats = fs.statSync(filename);
+        fileCache.set(filename, { data, mtimeMs: stats.mtimeMs });
+    } catch (error) {
+        fileCache.set(filename, { data, mtimeMs: Date.now() });
+    }
+}
+
 function escapeMarkdown(text) {
     if (!text) return '';
     return String(text)
@@ -180,7 +191,7 @@ function escapeMarkdown(text) {
         .replace(/\|/g, '\\|')
         .replace(/#/g, '\\#')
         .replace(/\+/g, '\\+')
-        .replace(/\-/g, '\\-')
+        .replace(/-/g, '\\-')
         .replace(/\=/g, '\\=')
         .replace(/\{/g, '\\{')
         .replace(/\}/g, '\\}')
@@ -214,13 +225,24 @@ function notifyOutOfStockIfDepleted(previousCount, newCount, productLabel) {
 
 function loadJSON(filename, defaultValue = {}) {
     try {
-        if (fs.existsSync(filename)) {
+        const exists = fs.existsSync(filename);
+        const cached = fileCache.get(filename);
+
+        if (exists) {
+            const stats = fs.statSync(filename);
+            if (cached && cached.mtimeMs === stats.mtimeMs) {
+                return cached.data;
+            }
+
             const data = fs.readFileSync(filename, 'utf8');
             if (data.trim() === '') {
                 saveJSON(filename, defaultValue);
                 return defaultValue;
             }
-            return JSON.parse(data);
+
+            const parsed = JSON.parse(data);
+            fileCache.set(filename, { data: parsed, mtimeMs: stats.mtimeMs });
+            return parsed;
         }
     } catch (error) {
         console.error(`⚠️ Error loading ${filename}:`, error.message);
@@ -232,6 +254,7 @@ function loadJSON(filename, defaultValue = {}) {
 function saveJSON(filename, data) {
     try {
         fs.writeFileSync(filename, JSON.stringify(data, null, 2), 'utf8');
+        updateFileCache(filename, data);
         return true;
     } catch (error) {
         console.error(`⚠️ Error saving ${filename}:`, error.message);
@@ -257,9 +280,76 @@ function buildAdminMainKeyboard() {
             [{ text: '🎁 Create Gift', callback_data: 'admin_create_gift' }, { text: '📋 View Gifts', callback_data: 'admin_view_gifts' }],
             [{ text: '🎁 Bonuses', callback_data: 'admin_bonuses' }],
             [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }],
-            [{ text: '📢 Broadcast', callback_data: 'admin_broadcast' }]
+            [{ text: '📢 Broadcast', callback_data: 'admin_broadcast' }, { text: '🧾 Product Blast', callback_data: 'admin_broadcast_products' }]
         ]
     };
+}
+
+function buildUserMainKeyboard() {
+    return {
+        inline_keyboard: [
+            [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
+            [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
+            [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
+            [{ text: '💳 VCC', callback_data: 'menu_vcc' }],
+            [{ text: `🎞️ ${getProductLabel('capcut_basic', 'CapCut Basics')} (Rp ${formatIDR(getCapcutBasicsPrice())})`, callback_data: 'buy_capcut_basics' }],
+            [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
+            [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
+            [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
+            [{ text: '📦 Stock', callback_data: 'check_stock' }],
+            [{ text: '📝 My Orders', callback_data: 'my_orders' }],
+            [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
+        ]
+    };
+}
+
+function getAvailabilitySnapshot() {
+    const stock = getStock();
+    const accountStock = getAccountStock();
+    const gptStock = getGptBasicsStock();
+    const capcutStock = getCapcutBasicsStock();
+    const gptInviteStock = getGptInviteStock();
+    const gptGoStock = getGptGoStock();
+    const gptPlusStock = getGptPlusStock();
+    const canvaStock = getCanvaBusinessStock();
+    const alightStock = getAlightMotionStock();
+    const perplexityStock = getPerplexityStock();
+    const gptGoVccStock = getGptGoVccStock();
+    const airwallexStock = getAirwallexVccStock();
+
+    return {
+        links: stock.links?.length || 0,
+        spotify: accountStock.accounts?.length || 0,
+        gpt_basic: gptStock.accounts?.length || 0,
+        capcut: capcutStock.accounts?.length || 0,
+        gpt_invite: gptInviteStock.accounts?.length || 0,
+        gpt_go: gptGoStock.accounts?.length || 0,
+        gpt_plus: gptPlusStock.accounts?.length || 0,
+        canva: canvaStock.accounts?.length || 0,
+        alight: alightStock.accounts?.length || 0,
+        perplexity: perplexityStock.links?.length || 0,
+        gpt_go_vcc: (gptGoVccStock.cards || []).length,
+        airwallex_vcc: (airwallexStock.cards || []).length
+    };
+}
+
+function buildAvailabilityText(snapshot) {
+    const lines = [
+        `🎵 ${escapeMarkdown(getProductLabel('account', 'Spotify Verified Accounts'))}: Rp ${formatIDR(getAccountPrice())} | Stock: ${snapshot.spotify}`,
+        `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics Accounts'))}: Rp ${formatIDR(getGptBasicsPrice())} | Stock: ${snapshot.gpt_basic}`,
+        `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: ${formatGptInvitePriceSummary()} | Stock: ${snapshot.gpt_invite}`,
+        `🚀 ${escapeMarkdown(getProductLabel('gpt_go', 'GPT Go'))}: ${formatGptGoPriceSummary()} | Stock: ${snapshot.gpt_go}`,
+        `✨ ${escapeMarkdown(getProductLabel('gpt_plus', 'GPT Plus'))}: ${formatGptPlusPriceSummary()} | Stock: ${snapshot.gpt_plus}`,
+        `🎨 ${escapeMarkdown(getProductLabel('canva_business', 'Canva Business'))}: ${formatCanvaBusinessPriceSummary()} | Stock: ${snapshot.canva}`,
+        `🎞️ ${escapeMarkdown(getProductLabel('capcut_basic', 'CapCut Basics Accounts'))}: Rp ${formatIDR(getCapcutBasicsPrice())} | Stock: ${snapshot.capcut}`,
+        `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Accounts'))}: ${formatAlightPriceSummary()} | Stock: ${snapshot.alight}`,
+        `🧠 ${escapeMarkdown(getPerplexityConfig().label)}: ${formatPerplexityPriceSummary()} | Stock: ${snapshot.perplexity}`,
+        `💳 ${escapeMarkdown(getProductLabel('gpt_go_vcc', 'GPT Go VCC Cards'))}: ${formatGptGoVccPriceSummary()} | Stock: ${snapshot.gpt_go_vcc}`,
+        `🌐 ${escapeMarkdown(getProductLabel('airwallex_vcc', 'Airwallex VCC Cards'))}: ${formatAirwallexVccPriceSummary()} | Stock: ${snapshot.airwallex_vcc}`,
+        `📦 Spotify Links: ${snapshot.links}`
+    ];
+
+    return lines.join('\n');
 }
 
 function mergeWithDefaults(defaults, overrides) {
@@ -1299,10 +1389,11 @@ function buildQuantityKeyboard(picker) {
 }
 
 function renderQuantityPickerText(picker) {
+    const safeLabel = escapeMarkdown(picker.label);
     const total = picker.unitPrice * picker.quantity;
     return (
         `🔢 *SELECT QUANTITY*\n\n` +
-        `📦 Product: ${picker.label}\n` +
+        `📦 Product: ${safeLabel}\n` +
         `💵 Price per item: Rp ${formatIDR(picker.unitPrice)}\n` +
         `📦 Available: ${picker.max}\n\n` +
         `✅ Current: ${picker.quantity} → Total Rp ${formatIDR(total)}\n` +
@@ -3365,121 +3456,52 @@ bot.onText(/\/start/, (msg) => {
     try {
         const isNewUser = addUser(userId, user);
 
+        const snapshot = getAvailabilitySnapshot();
+
         if (isAdmin(userId)) {
             const keyboard = buildAdminMainKeyboard();
 
             const users = getUsers();
             const orders = getOrders();
-            const stock = getStock();
-            const accountStock = getAccountStock();
-            const gptStock = getGptBasicsStock();
-            const capcutStock = getCapcutBasicsStock();
-            const gptInviteStock = getGptInviteStock();
-            const gptGoStock = getGptGoStock();
-            const gptPlusStock = getGptPlusStock();
-            const chatGptPlusStock = getChatGptPlusStock();
-            const alightStock = getAlightMotionStock();
-            const perplexityStock = getPerplexityStock();
             const pendingTopups = getPendingTopups();
-            
-            bot.sendMessage(chatId, 
+
+            bot.sendMessage(chatId,
                 `🔐 *ADMIN PANEL*\n\n` +
                 `Welcome ${escapeMarkdown(user.first_name)}!\n\n` +
                 `📊 Quick Stats:\n` +
                 `• Users: ${Object.keys(users).length}\n` +
                 `• Orders: ${orders.length}\n` +
-                `• Stock: ${stock.current_stock}\n` +
-                `• Links: ${stock.links.length}\n` +
-                `• Accounts: ${accountStock.accounts?.length || 0}\n` +
-                `• GPT Basics: ${gptStock.accounts?.length || 0}\n` +
-                `• CapCut Basics: ${capcutStock.accounts?.length || 0}\n` +
-                `• GPT via Invite: ${gptInviteStock.accounts?.length || 0}\n` +
-                `• GPT Go: ${gptGoStock.accounts?.length || 0}\n` +
-                `• GPT Plus: ${gptPlusStock.accounts?.length || 0}\n` +
-                `• ChatGPT Plus: ${chatGptPlusStock.accounts?.length || 0}\n` +
-                `• Alight Motion: ${alightStock.accounts?.length || 0}\n` +
-                `• Perplexity: ${perplexityStock.links?.length || 0}\n` +
                 `• Pending Top-ups: ${pendingTopups.length}\n\n` +
+                `🛍️ *Availability*\n` +
+                `${buildAvailabilityText(snapshot)}\n\n` +
                 `📅 ${getCurrentDateTime()}`,
                 { parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
             return;
         }
-        
+
         const balance = getBalance(userId);
-        const stock = getStock();
-        const accountStock = getAccountStock();
-        const gptStock = getGptBasicsStock();
-        const capcutStock = getCapcutBasicsStock();
-        const gptInviteStock = getGptInviteStock();
-        const gptGoStock = getGptGoStock();
-        const gptPlusStock = getGptPlusStock();
-        const canvaStock = getCanvaBusinessStock();
-        const alightStock = getAlightMotionStock();
-        const perplexityStock = getPerplexityStock();
-        const accountAvailable = accountStock.accounts?.length || 0;
-        const gptAvailable = gptStock.accounts?.length || 0;
-        const capcutAvailable = capcutStock.accounts?.length || 0;
-        const gptInviteAvailable = gptInviteStock.accounts?.length || 0;
-        const gptGoAvailable = gptGoStock.accounts?.length || 0;
-        const gptPlusAvailable = gptPlusStock.accounts?.length || 0;
-        const canvaAvailable = canvaStock.accounts?.length || 0;
-        const alightAvailable = alightStock.accounts?.length || 0;
-        const perplexityAvailable = perplexityStock.links?.length || 0;
-        const linkAvailable = stock.links?.length || 0;
         const pricing = getPricing();
         const pricingText = Object.keys(pricing).slice(0, 3).map(range =>
             `• ${range}: Rp ${formatIDR(pricing[range])}`
         ).join('\n');
-        
-        const keyboard = {
-            inline_keyboard: [
-                [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
-                [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
-                [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
-                [{ text: '💳 VCC Store', callback_data: 'menu_vcc' }],
-                [{ text: `🎞️ ${getProductLabel('capcut_basic', 'CapCut Basics')} (Rp ${formatIDR(getCapcutBasicsPrice())})`, callback_data: 'buy_capcut_basics' }],
-                [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
-                [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
-                [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
-                [{ text: '📦 Stock', callback_data: 'check_stock' }],
-                [{ text: '📝 My Orders', callback_data: 'my_orders' }],
-                [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
-            ]
-        };
-        
-            bot.sendMessage(chatId,
-                `🎉 *Welcome to Spotify Store!*\n\n` +
-                `Hi ${escapeMarkdown(user.first_name)}! 👋\n\n` +
-                `🎵 Spotify Student PREMIUM\n` +
-                `🔑 ${escapeMarkdown(getProductLabel('account', 'Verified Spotify Account'))}: Rp ${formatIDR(getAccountPrice())}\n` +
-                `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics Account'))}: Rp ${formatIDR(getGptBasicsPrice())}\n` +
-                `🎞️ ${escapeMarkdown(getProductLabel('capcut_basic', 'CapCut Basics Account'))}: Rp ${formatIDR(getCapcutBasicsPrice())}\n` +
-                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: ${formatGptInvitePriceSummary()}\n` +
-                `🚀 ${escapeMarkdown(getProductLabel('gpt_go', 'GPT Go'))}: ${formatGptGoPriceSummary()}\n` +
-                `✨ ${escapeMarkdown(getProductLabel('gpt_plus', 'GPT Plus'))}: ${formatGptPlusPriceSummary()}\n` +
-                `🎨 ${escapeMarkdown(getProductLabel('canva_business', 'Canva Business'))}: ${formatCanvaBusinessPriceSummary()}\n` +
-                `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Account'))}: ${formatAlightPriceSummary()}\n` +
-                `🧠 ${escapeMarkdown(getPerplexityConfig().label)}: ${formatPerplexityPriceSummary()}\n` +
-                `💳 Balance: Rp ${formatIDR(balance)}\n` +
-                `📦 Stock: ${linkAvailable} links\n` +
-                `🔑 Accounts in stock: ${accountAvailable}\n` +
-                `🤖 GPT Basics in stock: ${gptAvailable}\n` +
-                `🎞️ CapCut Basics in stock: ${capcutAvailable}\n` +
-                `📩 GPT Business via Invite in stock: ${gptInviteAvailable}\n` +
-                `🚀 GPT Go in stock: ${gptGoAvailable}\n` +
-                `✨ GPT Plus in stock: ${gptPlusAvailable}\n` +
-                `🎨 Canva Business in stock: ${canvaAvailable}\n` +
-                `🎬 Alight Motion in stock: ${alightAvailable}\n` +
-                `🧠 Perplexity links in stock: ${perplexityAvailable}\n\n` +
-                `💰 *Pricing:*\n` +
-                `${pricingText}\n\n` +
-            `🎁 Daily bonus available!\n` +
-            `💵 Top up balance easily!\n` +
-            `🎟️ Use code AAB for 10% off!\n\n` +
-            `📱 Admin: ${ADMIN_USERNAME}`,
-            { parse_mode: 'Markdown', reply_markup: keyboard }
-        ).catch(() => {});
+
+        const keyboard = buildUserMainKeyboard();
+
+        bot.sendMessage(chatId,
+            `🎉 *Welcome to Spotify Store!*\n\n` +
+            `Hi ${escapeMarkdown(user.first_name)}! 👋\n\n` +
+            `🛍️ *Available Products*\n` +
+            `${buildAvailabilityText(snapshot)}\n\n` +
+            `💳 Balance: Rp ${formatIDR(balance)}\n\n` +
+            `💰 *Pricing:*\n` +
+            `${pricingText}\n\n` +
+        `🎁 Daily bonus available!\n` +
+        `💵 Top up balance easily!\n` +
+        `🎟️ Use code AAB for 10% off!\n\n` +
+        `📱 Admin: ${ADMIN_USERNAME}`,
+        { parse_mode: 'Markdown', reply_markup: keyboard }
+    ).catch(() => {});
         
         if (isNewUser) {
             bot.sendMessage(ADMIN_TELEGRAM_ID,
@@ -7815,8 +7837,6 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: `🤖 ${getProductLabel('gpt_basic', 'GPT Basics Accounts')} (Rp ${formatIDR(getGptBasicsPrice())})`, callback_data: 'buy_gpt_basics' }],
                     [{ text: `📩 ${getProductLabel('gpt_invite', 'GPT Business via Invite')} (${formatGptInvitePriceSummary()})`, callback_data: 'buy_gpt_invite' }],
                     [{ text: `🚀 ${getProductLabel('gpt_go', 'GPT Go')} (${formatGptGoPriceSummary()})`, callback_data: 'buy_gpt_go' }],
-                    [{ text: '💳 GPT Go VCC', callback_data: 'buy_gpt_go_vcc' }],
-                    [{ text: '🌐 Airwallex VCC', callback_data: 'buy_airwallex_vcc' }],
                     [{ text: `✨ ${getProductLabel('gpt_plus', 'GPT Plus')} (${formatGptPlusPriceSummary()})`, callback_data: 'buy_gpt_plus' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
@@ -7842,7 +7862,7 @@ else if (data.startsWith('claim_gift_')) {
             };
 
             bot.editMessageText(
-                `💳 *VCC STORE*\n\n` +
+                `💳 *VCC*\n\n` +
                 `💳 GPT Go VCC in stock: ${(gptGoVccStock.cards || []).length}\n` +
                 `🌐 Airwallex VCC in stock: ${(airwallexVccStock.cards || []).length}\n\n` +
                 `Select a VCC product below to proceed.`,
@@ -7885,6 +7905,7 @@ else if (data.startsWith('claim_gift_')) {
             const stock = getGptGoVccStock();
             const available = stock.cards?.length || 0;
             const price = getGptGoVccPrice();
+            const adminSafe = escapeMarkdown(ADMIN_USERNAME);
 
             const keyboard = {
                 inline_keyboard: [
@@ -7905,7 +7926,8 @@ else if (data.startsWith('claim_gift_')) {
                 `💵 Price: Rp ${formatIDR(price)} per card\n` +
                 `📦 Available: ${available}\n\n` +
                 `${statusLine}\n\n` +
-                `📦 Delivery: Card number + expiry MM/YY + CVV auto-dropped from uploaded GPT Go VCC stock.`,
+                `📦 Delivery: Card number + expiry MM/YY + CVV auto-dropped from uploaded GPT Go VCC stock.\n` +
+                `📱 Support: ${adminSafe}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -7914,6 +7936,7 @@ else if (data.startsWith('claim_gift_')) {
             const airwallexVccStock = getAirwallexVccStock();
             const available = airwallexVccStock.cards?.length || 0;
             const variants = getAirwallexVccVariants();
+            const adminSafe = escapeMarkdown(ADMIN_USERNAME);
 
             const variantButtons = variants
                 .filter(v => v.price === null ? true : v.price > 0)
@@ -7955,7 +7978,7 @@ else if (data.startsWith('claim_gift_')) {
                 `❓ Need something not listed?`,
                 `✨ Custom requests available.`,
                 '',
-                `📦 Delivery: 1 Airwallex card + CVV per order with default expiry 12/28.`
+                `📦 Delivery: Airwallex card number + CVV auto-dropped with default expiry 12/28.`
             ].join('\n');
 
             const statusLine = available === 0
@@ -7963,7 +7986,7 @@ else if (data.startsWith('claim_gift_')) {
                 : '✅ Pick a card type below to continue.';
 
             bot.editMessageText(
-                `${premiumLines}\n\n${statusLine}`,
+                `${premiumLines}\n\n${statusLine}\n\n📱 Support: ${adminSafe}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -7984,7 +8007,9 @@ else if (data.startsWith('claim_gift_')) {
 
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+            const adminSafe = escapeMarkdown(ADMIN_USERNAME);
+            const variantLabel = escapeMarkdown(variant.label);
 
             const keyboard = { inline_keyboard: [] };
 
@@ -8006,12 +8031,13 @@ else if (data.startsWith('claim_gift_')) {
                 : `✅ ${variant.label} selected. Choose payment below.`;
 
             bot.editMessageText(
-                `🌐 *${variant.label.toUpperCase()}*\n\n` +
+                `🌐 *${variantLabel.toUpperCase()}*\n\n` +
                 `💵 Price: Rp ${formatIDR(variant.price)} per card\n` +
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
                 `${statusLine}\n\n` +
-                `📦 Delivery: Airwallex card number + CVV auto-dropped with default expiry 12/28.`,
+                `📦 Delivery: Airwallex card number + CVV auto-dropped with default expiry 12/28.\n` +
+                `📱 Support: ${adminSafe}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -8153,7 +8179,7 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                     [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
                     [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
-                    [{ text: '💳 VCC Store', callback_data: 'menu_vcc' }],
+                    [{ text: '💳 VCC', callback_data: 'menu_vcc' }],
                     [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                     [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                     [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
@@ -8483,7 +8509,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -8520,7 +8546,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -8631,7 +8657,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -8677,7 +8703,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -8797,7 +8823,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -9897,7 +9923,7 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                     [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
                     [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
-                    [{ text: '💳 VCC Store', callback_data: 'menu_vcc' }],
+                    [{ text: '💳 VCC', callback_data: 'menu_vcc' }],
                     [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                     [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                     [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
@@ -10180,13 +10206,23 @@ else if (data.startsWith('claim_gift_')) {
         
         else if (data === 'admin_broadcast') {
             if (!isAdmin(userId)) return;
-            
+
             userStates[chatId] = { state: 'awaiting_broadcast' };
-            
-            bot.sendMessage(chatId, 
-                '📢 *BROADCAST*\n\nSend photo or text message to broadcast:', 
+
+            bot.sendMessage(chatId,
+                '📢 *BROADCAST*\n\nSend photo or text message to broadcast:',
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
+        }
+
+        else if (data === 'admin_broadcast_products') {
+            if (!isAdmin(userId)) return;
+
+            const snapshot = getAvailabilitySnapshot();
+            const message = `🛒 *ALL AVAILABLE PRODUCTS*\n\n${buildAvailabilityText(snapshot)}\n\n` +
+                `📢 Tap a button below to order instantly.`;
+
+            broadcastToAllUsers(chatId, message, { parse_mode: 'Markdown', reply_markup: buildUserMainKeyboard() });
         }
         
         else if (data === 'skip_coupon') {
@@ -14205,42 +14241,58 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
 // BROADCAST HANDLERS
 // ============================================
 
-function handleBroadcastText(chatId, text) {
+function broadcastToAllUsers(adminChatId, message, options = {}) {
     try {
         const users = getUsers();
         const userIds = Object.keys(users).filter(id => parseInt(id) !== ADMIN_TELEGRAM_ID);
-        
+
         if (userIds.length === 0) {
-            bot.sendMessage(chatId, '❌ No users to broadcast!').catch(() => {});
-            delete userStates[chatId];
+            bot.sendMessage(adminChatId, '❌ No users to broadcast!').catch(() => {});
+            delete userStates[adminChatId];
             return;
         }
-        
+
         let success = 0;
         let failed = 0;
-        
-        bot.sendMessage(chatId, `📤 Broadcasting to ${userIds.length} users...`).then(statusMsg => {
+        const messageOptions = { ...options };
+        const fallbackOptions = { ...options };
+        delete fallbackOptions.parse_mode;
+
+        bot.sendMessage(adminChatId, `📤 Broadcasting to ${userIds.length} users...`).then(statusMsg => {
             const promises = userIds.map(userId => {
-                return bot.sendMessage(userId, text, { parse_mode: 'Markdown' })
+                return bot.sendMessage(userId, message, messageOptions)
                     .then(() => { success++; })
                     .catch(() => {
-                        return bot.sendMessage(userId, text)
+                        if (Object.keys(fallbackOptions).length === 0) {
+                            failed++;
+                            return;
+                        }
+
+                        return bot.sendMessage(userId, message, fallbackOptions)
                             .then(() => { success++; })
                             .catch(() => { failed++; });
                     });
             });
-            
+
             Promise.all(promises).then(() => {
                 bot.editMessageText(
                     `✅ *Broadcast Complete!*\n\n` +
                     `✅ Success: ${success}\n` +
                     `❌ Failed: ${failed}\n` +
                     `📊 Total: ${userIds.length}`,
-                    { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
+                    { chat_id: adminChatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
                 ).catch(() => {});
-                delete userStates[chatId];
+                delete userStates[adminChatId];
             });
         }).catch(() => {});
+    } catch (error) {
+        console.error('Error in broadcastToAllUsers:', error.message);
+    }
+}
+
+function handleBroadcastText(chatId, text) {
+    try {
+        broadcastToAllUsers(chatId, text, { parse_mode: 'Markdown' });
     } catch (error) {
         console.error('Error in handleBroadcastText:', error.message);
     }
