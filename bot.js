@@ -280,9 +280,76 @@ function buildAdminMainKeyboard() {
             [{ text: '🎁 Create Gift', callback_data: 'admin_create_gift' }, { text: '📋 View Gifts', callback_data: 'admin_view_gifts' }],
             [{ text: '🎁 Bonuses', callback_data: 'admin_bonuses' }],
             [{ text: '📥 Get Test Links', callback_data: 'admin_get_links' }],
-            [{ text: '📢 Broadcast', callback_data: 'admin_broadcast' }]
+            [{ text: '📢 Broadcast', callback_data: 'admin_broadcast' }, { text: '🧾 Product Blast', callback_data: 'admin_broadcast_products' }]
         ]
     };
+}
+
+function buildUserMainKeyboard() {
+    return {
+        inline_keyboard: [
+            [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
+            [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
+            [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
+            [{ text: '💳 VCC', callback_data: 'menu_vcc' }],
+            [{ text: `🎞️ ${getProductLabel('capcut_basic', 'CapCut Basics')} (Rp ${formatIDR(getCapcutBasicsPrice())})`, callback_data: 'buy_capcut_basics' }],
+            [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
+            [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
+            [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
+            [{ text: '📦 Stock', callback_data: 'check_stock' }],
+            [{ text: '📝 My Orders', callback_data: 'my_orders' }],
+            [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
+        ]
+    };
+}
+
+function getAvailabilitySnapshot() {
+    const stock = getStock();
+    const accountStock = getAccountStock();
+    const gptStock = getGptBasicsStock();
+    const capcutStock = getCapcutBasicsStock();
+    const gptInviteStock = getGptInviteStock();
+    const gptGoStock = getGptGoStock();
+    const gptPlusStock = getGptPlusStock();
+    const canvaStock = getCanvaBusinessStock();
+    const alightStock = getAlightMotionStock();
+    const perplexityStock = getPerplexityStock();
+    const gptGoVccStock = getGptGoVccStock();
+    const airwallexStock = getAirwallexVccStock();
+
+    return {
+        links: stock.links?.length || 0,
+        spotify: accountStock.accounts?.length || 0,
+        gpt_basic: gptStock.accounts?.length || 0,
+        capcut: capcutStock.accounts?.length || 0,
+        gpt_invite: gptInviteStock.accounts?.length || 0,
+        gpt_go: gptGoStock.accounts?.length || 0,
+        gpt_plus: gptPlusStock.accounts?.length || 0,
+        canva: canvaStock.accounts?.length || 0,
+        alight: alightStock.accounts?.length || 0,
+        perplexity: perplexityStock.links?.length || 0,
+        gpt_go_vcc: (gptGoVccStock.cards || []).length,
+        airwallex_vcc: (airwallexStock.cards || []).length
+    };
+}
+
+function buildAvailabilityText(snapshot) {
+    const lines = [
+        `🎵 ${escapeMarkdown(getProductLabel('account', 'Spotify Verified Accounts'))}: Rp ${formatIDR(getAccountPrice())} | Stock: ${snapshot.spotify}`,
+        `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics Accounts'))}: Rp ${formatIDR(getGptBasicsPrice())} | Stock: ${snapshot.gpt_basic}`,
+        `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: ${formatGptInvitePriceSummary()} | Stock: ${snapshot.gpt_invite}`,
+        `🚀 ${escapeMarkdown(getProductLabel('gpt_go', 'GPT Go'))}: ${formatGptGoPriceSummary()} | Stock: ${snapshot.gpt_go}`,
+        `✨ ${escapeMarkdown(getProductLabel('gpt_plus', 'GPT Plus'))}: ${formatGptPlusPriceSummary()} | Stock: ${snapshot.gpt_plus}`,
+        `🎨 ${escapeMarkdown(getProductLabel('canva_business', 'Canva Business'))}: ${formatCanvaBusinessPriceSummary()} | Stock: ${snapshot.canva}`,
+        `🎞️ ${escapeMarkdown(getProductLabel('capcut_basic', 'CapCut Basics Accounts'))}: Rp ${formatIDR(getCapcutBasicsPrice())} | Stock: ${snapshot.capcut}`,
+        `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Accounts'))}: ${formatAlightPriceSummary()} | Stock: ${snapshot.alight}`,
+        `🧠 ${escapeMarkdown(getPerplexityConfig().label)}: ${formatPerplexityPriceSummary()} | Stock: ${snapshot.perplexity}`,
+        `💳 ${escapeMarkdown(getProductLabel('gpt_go_vcc', 'GPT Go VCC Cards'))}: ${formatGptGoVccPriceSummary()} | Stock: ${snapshot.gpt_go_vcc}`,
+        `🌐 ${escapeMarkdown(getProductLabel('airwallex_vcc', 'Airwallex VCC Cards'))}: ${formatAirwallexVccPriceSummary()} | Stock: ${snapshot.airwallex_vcc}`,
+        `📦 Spotify Links: ${snapshot.links}`
+    ];
+
+    return lines.join('\n');
 }
 
 function mergeWithDefaults(defaults, overrides) {
@@ -3389,121 +3456,52 @@ bot.onText(/\/start/, (msg) => {
     try {
         const isNewUser = addUser(userId, user);
 
+        const snapshot = getAvailabilitySnapshot();
+
         if (isAdmin(userId)) {
             const keyboard = buildAdminMainKeyboard();
 
             const users = getUsers();
             const orders = getOrders();
-            const stock = getStock();
-            const accountStock = getAccountStock();
-            const gptStock = getGptBasicsStock();
-            const capcutStock = getCapcutBasicsStock();
-            const gptInviteStock = getGptInviteStock();
-            const gptGoStock = getGptGoStock();
-            const gptPlusStock = getGptPlusStock();
-            const chatGptPlusStock = getChatGptPlusStock();
-            const alightStock = getAlightMotionStock();
-            const perplexityStock = getPerplexityStock();
             const pendingTopups = getPendingTopups();
-            
-            bot.sendMessage(chatId, 
+
+            bot.sendMessage(chatId,
                 `🔐 *ADMIN PANEL*\n\n` +
                 `Welcome ${escapeMarkdown(user.first_name)}!\n\n` +
                 `📊 Quick Stats:\n` +
                 `• Users: ${Object.keys(users).length}\n` +
                 `• Orders: ${orders.length}\n` +
-                `• Stock: ${stock.current_stock}\n` +
-                `• Links: ${stock.links.length}\n` +
-                `• Accounts: ${accountStock.accounts?.length || 0}\n` +
-                `• GPT Basics: ${gptStock.accounts?.length || 0}\n` +
-                `• CapCut Basics: ${capcutStock.accounts?.length || 0}\n` +
-                `• GPT via Invite: ${gptInviteStock.accounts?.length || 0}\n` +
-                `• GPT Go: ${gptGoStock.accounts?.length || 0}\n` +
-                `• GPT Plus: ${gptPlusStock.accounts?.length || 0}\n` +
-                `• ChatGPT Plus: ${chatGptPlusStock.accounts?.length || 0}\n` +
-                `• Alight Motion: ${alightStock.accounts?.length || 0}\n` +
-                `• Perplexity: ${perplexityStock.links?.length || 0}\n` +
                 `• Pending Top-ups: ${pendingTopups.length}\n\n` +
+                `🛍️ *Availability*\n` +
+                `${buildAvailabilityText(snapshot)}\n\n` +
                 `📅 ${getCurrentDateTime()}`,
                 { parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
             return;
         }
-        
+
         const balance = getBalance(userId);
-        const stock = getStock();
-        const accountStock = getAccountStock();
-        const gptStock = getGptBasicsStock();
-        const capcutStock = getCapcutBasicsStock();
-        const gptInviteStock = getGptInviteStock();
-        const gptGoStock = getGptGoStock();
-        const gptPlusStock = getGptPlusStock();
-        const canvaStock = getCanvaBusinessStock();
-        const alightStock = getAlightMotionStock();
-        const perplexityStock = getPerplexityStock();
-        const accountAvailable = accountStock.accounts?.length || 0;
-        const gptAvailable = gptStock.accounts?.length || 0;
-        const capcutAvailable = capcutStock.accounts?.length || 0;
-        const gptInviteAvailable = gptInviteStock.accounts?.length || 0;
-        const gptGoAvailable = gptGoStock.accounts?.length || 0;
-        const gptPlusAvailable = gptPlusStock.accounts?.length || 0;
-        const canvaAvailable = canvaStock.accounts?.length || 0;
-        const alightAvailable = alightStock.accounts?.length || 0;
-        const perplexityAvailable = perplexityStock.links?.length || 0;
-        const linkAvailable = stock.links?.length || 0;
         const pricing = getPricing();
         const pricingText = Object.keys(pricing).slice(0, 3).map(range =>
             `• ${range}: Rp ${formatIDR(pricing[range])}`
         ).join('\n');
-        
-        const keyboard = {
-            inline_keyboard: [
-                [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
-                [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
-                [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
-                [{ text: '💳 VCC', callback_data: 'menu_vcc' }],
-                [{ text: `🎞️ ${getProductLabel('capcut_basic', 'CapCut Basics')} (Rp ${formatIDR(getCapcutBasicsPrice())})`, callback_data: 'buy_capcut_basics' }],
-                [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
-                [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
-                [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
-                [{ text: '📦 Stock', callback_data: 'check_stock' }],
-                [{ text: '📝 My Orders', callback_data: 'my_orders' }],
-                [{ text: '🎁 Daily Bonus', callback_data: 'daily_bonus' }],
-            ]
-        };
-        
-            bot.sendMessage(chatId,
-                `🎉 *Welcome to Spotify Store!*\n\n` +
-                `Hi ${escapeMarkdown(user.first_name)}! 👋\n\n` +
-                `🎵 Spotify Student PREMIUM\n` +
-                `🔑 ${escapeMarkdown(getProductLabel('account', 'Verified Spotify Account'))}: Rp ${formatIDR(getAccountPrice())}\n` +
-                `🤖 ${escapeMarkdown(getProductLabel('gpt_basic', 'GPT Basics Account'))}: Rp ${formatIDR(getGptBasicsPrice())}\n` +
-                `🎞️ ${escapeMarkdown(getProductLabel('capcut_basic', 'CapCut Basics Account'))}: Rp ${formatIDR(getCapcutBasicsPrice())}\n` +
-                `📩 ${escapeMarkdown(getProductLabel('gpt_invite', 'GPT via Invite'))}: ${formatGptInvitePriceSummary()}\n` +
-                `🚀 ${escapeMarkdown(getProductLabel('gpt_go', 'GPT Go'))}: ${formatGptGoPriceSummary()}\n` +
-                `✨ ${escapeMarkdown(getProductLabel('gpt_plus', 'GPT Plus'))}: ${formatGptPlusPriceSummary()}\n` +
-                `🎨 ${escapeMarkdown(getProductLabel('canva_business', 'Canva Business'))}: ${formatCanvaBusinessPriceSummary()}\n` +
-                `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Account'))}: ${formatAlightPriceSummary()}\n` +
-                `🧠 ${escapeMarkdown(getPerplexityConfig().label)}: ${formatPerplexityPriceSummary()}\n` +
-                `💳 Balance: Rp ${formatIDR(balance)}\n` +
-                `📦 Stock: ${linkAvailable} links\n` +
-                `🔑 Accounts in stock: ${accountAvailable}\n` +
-                `🤖 GPT Basics in stock: ${gptAvailable}\n` +
-                `🎞️ CapCut Basics in stock: ${capcutAvailable}\n` +
-                `📩 GPT Business via Invite in stock: ${gptInviteAvailable}\n` +
-                `🚀 GPT Go in stock: ${gptGoAvailable}\n` +
-                `✨ GPT Plus in stock: ${gptPlusAvailable}\n` +
-                `🎨 Canva Business in stock: ${canvaAvailable}\n` +
-                `🎬 Alight Motion in stock: ${alightAvailable}\n` +
-                `🧠 Perplexity links in stock: ${perplexityAvailable}\n\n` +
-                `💰 *Pricing:*\n` +
-                `${pricingText}\n\n` +
-            `🎁 Daily bonus available!\n` +
-            `💵 Top up balance easily!\n` +
-            `🎟️ Use code AAB for 10% off!\n\n` +
-            `📱 Admin: ${ADMIN_USERNAME}`,
-            { parse_mode: 'Markdown', reply_markup: keyboard }
-        ).catch(() => {});
+
+        const keyboard = buildUserMainKeyboard();
+
+        bot.sendMessage(chatId,
+            `🎉 *Welcome to Spotify Store!*\n\n` +
+            `Hi ${escapeMarkdown(user.first_name)}! 👋\n\n` +
+            `🛍️ *Available Products*\n` +
+            `${buildAvailabilityText(snapshot)}\n\n` +
+            `💳 Balance: Rp ${formatIDR(balance)}\n\n` +
+            `💰 *Pricing:*\n` +
+            `${pricingText}\n\n` +
+        `🎁 Daily bonus available!\n` +
+        `💵 Top up balance easily!\n` +
+        `🎟️ Use code AAB for 10% off!\n\n` +
+        `📱 Admin: ${ADMIN_USERNAME}`,
+        { parse_mode: 'Markdown', reply_markup: keyboard }
+    ).catch(() => {});
         
         if (isNewUser) {
             bot.sendMessage(ADMIN_TELEGRAM_ID,
@@ -10208,13 +10206,23 @@ else if (data.startsWith('claim_gift_')) {
         
         else if (data === 'admin_broadcast') {
             if (!isAdmin(userId)) return;
-            
+
             userStates[chatId] = { state: 'awaiting_broadcast' };
-            
-            bot.sendMessage(chatId, 
-                '📢 *BROADCAST*\n\nSend photo or text message to broadcast:', 
+
+            bot.sendMessage(chatId,
+                '📢 *BROADCAST*\n\nSend photo or text message to broadcast:',
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
+        }
+
+        else if (data === 'admin_broadcast_products') {
+            if (!isAdmin(userId)) return;
+
+            const snapshot = getAvailabilitySnapshot();
+            const message = `🛒 *ALL AVAILABLE PRODUCTS*\n\n${buildAvailabilityText(snapshot)}\n\n` +
+                `📢 Tap a button below to order instantly.`;
+
+            broadcastToAllUsers(chatId, message, { parse_mode: 'Markdown', reply_markup: buildUserMainKeyboard() });
         }
         
         else if (data === 'skip_coupon') {
@@ -14233,42 +14241,58 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
 // BROADCAST HANDLERS
 // ============================================
 
-function handleBroadcastText(chatId, text) {
+function broadcastToAllUsers(adminChatId, message, options = {}) {
     try {
         const users = getUsers();
         const userIds = Object.keys(users).filter(id => parseInt(id) !== ADMIN_TELEGRAM_ID);
-        
+
         if (userIds.length === 0) {
-            bot.sendMessage(chatId, '❌ No users to broadcast!').catch(() => {});
-            delete userStates[chatId];
+            bot.sendMessage(adminChatId, '❌ No users to broadcast!').catch(() => {});
+            delete userStates[adminChatId];
             return;
         }
-        
+
         let success = 0;
         let failed = 0;
-        
-        bot.sendMessage(chatId, `📤 Broadcasting to ${userIds.length} users...`).then(statusMsg => {
+        const messageOptions = { ...options };
+        const fallbackOptions = { ...options };
+        delete fallbackOptions.parse_mode;
+
+        bot.sendMessage(adminChatId, `📤 Broadcasting to ${userIds.length} users...`).then(statusMsg => {
             const promises = userIds.map(userId => {
-                return bot.sendMessage(userId, text, { parse_mode: 'Markdown' })
+                return bot.sendMessage(userId, message, messageOptions)
                     .then(() => { success++; })
                     .catch(() => {
-                        return bot.sendMessage(userId, text)
+                        if (Object.keys(fallbackOptions).length === 0) {
+                            failed++;
+                            return;
+                        }
+
+                        return bot.sendMessage(userId, message, fallbackOptions)
                             .then(() => { success++; })
                             .catch(() => { failed++; });
                     });
             });
-            
+
             Promise.all(promises).then(() => {
                 bot.editMessageText(
                     `✅ *Broadcast Complete!*\n\n` +
                     `✅ Success: ${success}\n` +
                     `❌ Failed: ${failed}\n` +
                     `📊 Total: ${userIds.length}`,
-                    { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
+                    { chat_id: adminChatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
                 ).catch(() => {});
-                delete userStates[chatId];
+                delete userStates[adminChatId];
             });
         }).catch(() => {});
+    } catch (error) {
+        console.error('Error in broadcastToAllUsers:', error.message);
+    }
+}
+
+function handleBroadcastText(chatId, text) {
+    try {
+        broadcastToAllUsers(chatId, text, { parse_mode: 'Markdown' });
     } catch (error) {
         console.error('Error in handleBroadcastText:', error.message);
     }
