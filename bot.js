@@ -164,6 +164,17 @@ function isRateLimited(userId) {
 // HELPER FUNCTIONS
 // ============================================
 
+const fileCache = new Map();
+
+function updateFileCache(filename, data) {
+    try {
+        const stats = fs.statSync(filename);
+        fileCache.set(filename, { data, mtimeMs: stats.mtimeMs });
+    } catch (error) {
+        fileCache.set(filename, { data, mtimeMs: Date.now() });
+    }
+}
+
 function escapeMarkdown(text) {
     if (!text) return '';
     return String(text)
@@ -180,7 +191,7 @@ function escapeMarkdown(text) {
         .replace(/\|/g, '\\|')
         .replace(/#/g, '\\#')
         .replace(/\+/g, '\\+')
-        .replace(/\-/g, '\\-')
+        .replace(/-/g, '\\-')
         .replace(/\=/g, '\\=')
         .replace(/\{/g, '\\{')
         .replace(/\}/g, '\\}')
@@ -214,13 +225,24 @@ function notifyOutOfStockIfDepleted(previousCount, newCount, productLabel) {
 
 function loadJSON(filename, defaultValue = {}) {
     try {
-        if (fs.existsSync(filename)) {
+        const exists = fs.existsSync(filename);
+        const cached = fileCache.get(filename);
+
+        if (exists) {
+            const stats = fs.statSync(filename);
+            if (cached && cached.mtimeMs === stats.mtimeMs) {
+                return cached.data;
+            }
+
             const data = fs.readFileSync(filename, 'utf8');
             if (data.trim() === '') {
                 saveJSON(filename, defaultValue);
                 return defaultValue;
             }
-            return JSON.parse(data);
+
+            const parsed = JSON.parse(data);
+            fileCache.set(filename, { data: parsed, mtimeMs: stats.mtimeMs });
+            return parsed;
         }
     } catch (error) {
         console.error(`⚠️ Error loading ${filename}:`, error.message);
@@ -232,6 +254,7 @@ function loadJSON(filename, defaultValue = {}) {
 function saveJSON(filename, data) {
     try {
         fs.writeFileSync(filename, JSON.stringify(data, null, 2), 'utf8');
+        updateFileCache(filename, data);
         return true;
     } catch (error) {
         console.error(`⚠️ Error saving ${filename}:`, error.message);
@@ -1299,10 +1322,11 @@ function buildQuantityKeyboard(picker) {
 }
 
 function renderQuantityPickerText(picker) {
+    const safeLabel = escapeMarkdown(picker.label);
     const total = picker.unitPrice * picker.quantity;
     return (
         `🔢 *SELECT QUANTITY*\n\n` +
-        `📦 Product: ${picker.label}\n` +
+        `📦 Product: ${safeLabel}\n` +
         `💵 Price per item: Rp ${formatIDR(picker.unitPrice)}\n` +
         `📦 Available: ${picker.max}\n\n` +
         `✅ Current: ${picker.quantity} → Total Rp ${formatIDR(total)}\n` +
@@ -7885,6 +7909,7 @@ else if (data.startsWith('claim_gift_')) {
             const stock = getGptGoVccStock();
             const available = stock.cards?.length || 0;
             const price = getGptGoVccPrice();
+            const adminSafe = escapeMarkdown(ADMIN_USERNAME);
 
             const keyboard = {
                 inline_keyboard: [
@@ -7905,7 +7930,8 @@ else if (data.startsWith('claim_gift_')) {
                 `💵 Price: Rp ${formatIDR(price)} per card\n` +
                 `📦 Available: ${available}\n\n` +
                 `${statusLine}\n\n` +
-                `📦 Delivery: Card number + expiry MM/YY + CVV auto-dropped from uploaded GPT Go VCC stock.`,
+                `📦 Delivery: Card number + expiry MM/YY + CVV auto-dropped from uploaded GPT Go VCC stock.\n` +
+                `📱 Support: ${adminSafe}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -7914,6 +7940,7 @@ else if (data.startsWith('claim_gift_')) {
             const airwallexVccStock = getAirwallexVccStock();
             const available = airwallexVccStock.cards?.length || 0;
             const variants = getAirwallexVccVariants();
+            const adminSafe = escapeMarkdown(ADMIN_USERNAME);
 
             const variantButtons = variants
                 .filter(v => v.price === null ? true : v.price > 0)
@@ -7955,7 +7982,7 @@ else if (data.startsWith('claim_gift_')) {
                 `❓ Need something not listed?`,
                 `✨ Custom requests available.`,
                 '',
-                `📦 Delivery: 1 Airwallex card + CVV per order with default expiry 12/28.`
+                `📦 Delivery: Airwallex card number + CVV auto-dropped with default expiry 12/28.`
             ].join('\n');
 
             const statusLine = available === 0
@@ -7963,7 +7990,7 @@ else if (data.startsWith('claim_gift_')) {
                 : '✅ Pick a card type below to continue.';
 
             bot.editMessageText(
-                `${premiumLines}\n\n${statusLine}`,
+                `${premiumLines}\n\n${statusLine}\n\n📱 Support: ${adminSafe}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -7984,7 +8011,9 @@ else if (data.startsWith('claim_gift_')) {
 
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+            const adminSafe = escapeMarkdown(ADMIN_USERNAME);
+            const variantLabel = escapeMarkdown(variant.label);
 
             const keyboard = { inline_keyboard: [] };
 
@@ -8006,12 +8035,13 @@ else if (data.startsWith('claim_gift_')) {
                 : `✅ ${variant.label} selected. Choose payment below.`;
 
             bot.editMessageText(
-                `🌐 *${variant.label.toUpperCase()}*\n\n` +
+                `🌐 *${variantLabel.toUpperCase()}*\n\n` +
                 `💵 Price: Rp ${formatIDR(variant.price)} per card\n` +
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
                 `${statusLine}\n\n` +
-                `📦 Delivery: Airwallex card number + CVV auto-dropped with default expiry 12/28.`,
+                `📦 Delivery: Airwallex card number + CVV auto-dropped with default expiry 12/28.\n` +
+                `📱 Support: ${adminSafe}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -8483,7 +8513,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -8520,7 +8550,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -8631,7 +8661,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -8677,7 +8707,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -8797,7 +8827,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
