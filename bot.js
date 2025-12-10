@@ -180,7 +180,7 @@ function escapeMarkdown(text) {
         .replace(/\|/g, '\\|')
         .replace(/#/g, '\\#')
         .replace(/\+/g, '\\+')
-        .replace(/\-/g, '\\-')
+        .replace(/-/g, '\\-')
         .replace(/\=/g, '\\=')
         .replace(/\{/g, '\\{')
         .replace(/\}/g, '\\}')
@@ -1299,10 +1299,11 @@ function buildQuantityKeyboard(picker) {
 }
 
 function renderQuantityPickerText(picker) {
+    const safeLabel = escapeMarkdown(picker.label);
     const total = picker.unitPrice * picker.quantity;
     return (
         `🔢 *SELECT QUANTITY*\n\n` +
-        `📦 Product: ${picker.label}\n` +
+        `📦 Product: ${safeLabel}\n` +
         `💵 Price per item: Rp ${formatIDR(picker.unitPrice)}\n` +
         `📦 Available: ${picker.max}\n\n` +
         `✅ Current: ${picker.quantity} → Total Rp ${formatIDR(total)}\n` +
@@ -7885,6 +7886,7 @@ else if (data.startsWith('claim_gift_')) {
             const stock = getGptGoVccStock();
             const available = stock.cards?.length || 0;
             const price = getGptGoVccPrice();
+            const adminSafe = escapeMarkdown(ADMIN_USERNAME);
 
             const keyboard = {
                 inline_keyboard: [
@@ -7905,7 +7907,8 @@ else if (data.startsWith('claim_gift_')) {
                 `💵 Price: Rp ${formatIDR(price)} per card\n` +
                 `📦 Available: ${available}\n\n` +
                 `${statusLine}\n\n` +
-                `📦 Delivery: Card number + expiry MM/YY + CVV auto-dropped from uploaded GPT Go VCC stock.`,
+                `📦 Delivery: Card number + expiry MM/YY + CVV auto-dropped from uploaded GPT Go VCC stock.\n` +
+                `📱 Support: ${adminSafe}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -7914,6 +7917,7 @@ else if (data.startsWith('claim_gift_')) {
             const airwallexVccStock = getAirwallexVccStock();
             const available = airwallexVccStock.cards?.length || 0;
             const variants = getAirwallexVccVariants();
+            const adminSafe = escapeMarkdown(ADMIN_USERNAME);
 
             const variantButtons = variants
                 .filter(v => v.price === null ? true : v.price > 0)
@@ -7963,7 +7967,7 @@ else if (data.startsWith('claim_gift_')) {
                 : '✅ Pick a card type below to continue.';
 
             bot.editMessageText(
-                `${premiumLines}\n\n${statusLine}`,
+                `${premiumLines}\n\n${statusLine}\n\n📱 Support: ${adminSafe}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
@@ -7985,6 +7989,8 @@ else if (data.startsWith('claim_gift_')) {
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
             const maxQuantity = 1;
+            const adminSafe = escapeMarkdown(ADMIN_USERNAME);
+            const variantLabel = escapeMarkdown(variant.label);
 
             const keyboard = { inline_keyboard: [] };
 
@@ -8006,12 +8012,13 @@ else if (data.startsWith('claim_gift_')) {
                 : `✅ ${variant.label} selected. Choose payment below.`;
 
             bot.editMessageText(
-                `🌐 *${variant.label.toUpperCase()}*\n\n` +
+                `🌐 *${variantLabel.toUpperCase()}*\n\n` +
                 `💵 Price: Rp ${formatIDR(variant.price)} per card\n` +
                 `📦 Available: ${available}\n` +
                 `📌 Min 1 | Max ${maxQuantity}\n\n` +
                 `${statusLine}\n\n` +
-                `📦 Delivery: Airwallex card number + CVV auto-dropped with default expiry 12/28.`,
+                `📦 Delivery: Airwallex card number + CVV auto-dropped with default expiry 12/28.\n` +
+                `📱 Support: ${adminSafe}`,
                 { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
             ).catch(() => {});
         }
