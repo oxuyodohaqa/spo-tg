@@ -474,6 +474,16 @@ def extract_body_text(msg):
 
 
 def fetch_airwallex_otp():
+    """Fetch the newest Airwallex OTP from Gmail efficiently.
+
+    The previous implementation only inspected the single newest email, which
+    sometimes isn't the OTP message and caused frequent failures. It also
+    scanned the entire mailbox which could be slow for large inboxes. To make
+    this snappier and more reliable for concurrent users, we now fetch only the
+    last few Airwallex emails and return the first one that contains a 6-digit
+    code.
+    """
+
     if not GMAIL_USER or not GMAIL_APP_PASSWORD:
         raise RuntimeError("Gmail credentials are not configured")
 
@@ -492,22 +502,25 @@ def fetch_airwallex_otp():
         if not ids:
             raise RuntimeError("No Airwallex emails found")
 
-        latest_id = ids[-1]
-        status, msg_data = mail.fetch(latest_id, "(RFC822)")
-        if status != "OK" or not msg_data:
-            raise RuntimeError("Failed to fetch latest Airwallex email")
+        # Check the most recent emails first to quickly return a valid OTP even
+        # if the latest message is not an OTP notification.
+        for msg_id in reversed(ids[-5:]):
+            status, msg_data = mail.fetch(msg_id, "(RFC822)")
+            if status != "OK" or not msg_data:
+                logger.warning(f"Skipping message {msg_id!r} due to fetch failure")
+                continue
 
-        raw_email = msg_data[0][1]
-        msg = message_from_bytes(raw_email)
-        subject = msg.get("Subject", "")
-        body_text = extract_body_text(msg)
+            raw_email = msg_data[0][1]
+            msg = message_from_bytes(raw_email)
+            subject = msg.get("Subject", "")
+            body_text = extract_body_text(msg)
+            otp_match = re.search(r"\b(\d{6})\b", subject) or re.search(r"\b(\d{6})\b", body_text)
 
-        otp_match = re.search(r"\b(\d{6})\b", subject) or re.search(r"\b(\d{6})\b", body_text)
-        if not otp_match:
-            raise RuntimeError("OTP code not found in latest email")
+            if otp_match:
+                sent_at = parsedate_to_datetime(msg.get("Date")) if msg.get("Date") else None
+                return otp_match.group(1), subject, sent_at
 
-        sent_at = parsedate_to_datetime(msg.get("Date")) if msg.get("Date") else None
-        return otp_match.group(1), subject, sent_at
+        raise RuntimeError("OTP code not found in recent Airwallex emails")
     finally:
         try:
             mail.logout()
