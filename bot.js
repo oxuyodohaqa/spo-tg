@@ -164,6 +164,17 @@ function isRateLimited(userId) {
 // HELPER FUNCTIONS
 // ============================================
 
+const fileCache = new Map();
+
+function updateFileCache(filename, data) {
+    try {
+        const stats = fs.statSync(filename);
+        fileCache.set(filename, { data, mtimeMs: stats.mtimeMs });
+    } catch (error) {
+        fileCache.set(filename, { data, mtimeMs: Date.now() });
+    }
+}
+
 function escapeMarkdown(text) {
     if (!text) return '';
     return String(text)
@@ -214,13 +225,24 @@ function notifyOutOfStockIfDepleted(previousCount, newCount, productLabel) {
 
 function loadJSON(filename, defaultValue = {}) {
     try {
-        if (fs.existsSync(filename)) {
+        const exists = fs.existsSync(filename);
+        const cached = fileCache.get(filename);
+
+        if (exists) {
+            const stats = fs.statSync(filename);
+            if (cached && cached.mtimeMs === stats.mtimeMs) {
+                return cached.data;
+            }
+
             const data = fs.readFileSync(filename, 'utf8');
             if (data.trim() === '') {
                 saveJSON(filename, defaultValue);
                 return defaultValue;
             }
-            return JSON.parse(data);
+
+            const parsed = JSON.parse(data);
+            fileCache.set(filename, { data: parsed, mtimeMs: stats.mtimeMs });
+            return parsed;
         }
     } catch (error) {
         console.error(`⚠️ Error loading ${filename}:`, error.message);
@@ -232,6 +254,7 @@ function loadJSON(filename, defaultValue = {}) {
 function saveJSON(filename, data) {
     try {
         fs.writeFileSync(filename, JSON.stringify(data, null, 2), 'utf8');
+        updateFileCache(filename, data);
         return true;
     } catch (error) {
         console.error(`⚠️ Error saving ${filename}:`, error.message);
@@ -7959,7 +7982,7 @@ else if (data.startsWith('claim_gift_')) {
                 `❓ Need something not listed?`,
                 `✨ Custom requests available.`,
                 '',
-                `📦 Delivery: 1 Airwallex card + CVV per order with default expiry 12/28.`
+                `📦 Delivery: Airwallex card number + CVV auto-dropped with default expiry 12/28.`
             ].join('\n');
 
             const statusLine = available === 0
@@ -7988,7 +8011,7 @@ else if (data.startsWith('claim_gift_')) {
 
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
             const adminSafe = escapeMarkdown(ADMIN_USERNAME);
             const variantLabel = escapeMarkdown(variant.label);
 
@@ -8490,7 +8513,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -8527,7 +8550,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -8638,7 +8661,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -8684,7 +8707,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
@@ -8804,7 +8827,7 @@ else if (data.startsWith('claim_gift_')) {
             }
             const vccStock = getAirwallexVccStock();
             const available = vccStock.cards?.length || 0;
-            const maxQuantity = 1;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
 
             if (available === 0) {
                 bot.answerCallbackQuery(query.id, {
