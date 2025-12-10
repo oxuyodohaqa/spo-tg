@@ -3461,7 +3461,7 @@ bot.onText(/\/start/, (msg) => {
                 [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                 [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
                 [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
-                [{ text: '💳 VCC Store', callback_data: 'menu_vcc' }],
+                [{ text: '💳 VCC', callback_data: 'menu_vcc' }],
                 [{ text: `🎞️ ${getProductLabel('capcut_basic', 'CapCut Basics')} (Rp ${formatIDR(getCapcutBasicsPrice())})`, callback_data: 'buy_capcut_basics' }],
                 [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                 [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
@@ -7839,8 +7839,6 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: `🤖 ${getProductLabel('gpt_basic', 'GPT Basics Accounts')} (Rp ${formatIDR(getGptBasicsPrice())})`, callback_data: 'buy_gpt_basics' }],
                     [{ text: `📩 ${getProductLabel('gpt_invite', 'GPT Business via Invite')} (${formatGptInvitePriceSummary()})`, callback_data: 'buy_gpt_invite' }],
                     [{ text: `🚀 ${getProductLabel('gpt_go', 'GPT Go')} (${formatGptGoPriceSummary()})`, callback_data: 'buy_gpt_go' }],
-                    [{ text: '💳 GPT Go VCC', callback_data: 'buy_gpt_go_vcc' }],
-                    [{ text: '🌐 Airwallex VCC', callback_data: 'buy_airwallex_vcc' }],
                     [{ text: `✨ ${getProductLabel('gpt_plus', 'GPT Plus')} (${formatGptPlusPriceSummary()})`, callback_data: 'buy_gpt_plus' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_main' }]
                 ]
@@ -7866,7 +7864,7 @@ else if (data.startsWith('claim_gift_')) {
             };
 
             bot.editMessageText(
-                `💳 *VCC STORE*\n\n` +
+                `💳 *VCC*\n\n` +
                 `💳 GPT Go VCC in stock: ${(gptGoVccStock.cards || []).length}\n` +
                 `🌐 Airwallex VCC in stock: ${(airwallexVccStock.cards || []).length}\n\n` +
                 `Select a VCC product below to proceed.`,
@@ -8183,7 +8181,7 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                     [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
                     [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
-                    [{ text: '💳 VCC Store', callback_data: 'menu_vcc' }],
+                    [{ text: '💳 VCC', callback_data: 'menu_vcc' }],
                     [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                     [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                     [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
@@ -9927,7 +9925,7 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
                     [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
                     [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
-                    [{ text: '💳 VCC Store', callback_data: 'menu_vcc' }],
+                    [{ text: '💳 VCC', callback_data: 'menu_vcc' }],
                     [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
                     [{ text: `🧠 Perplexity AI (${formatPerplexityPriceSummary()})`, callback_data: 'buy_perplexity' }],
                     [{ text: '💰 Balance & Top Up', callback_data: 'menu_balance' }],
