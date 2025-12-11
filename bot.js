@@ -116,6 +116,10 @@ const DEFAULT_PRODUCT_SETTINGS = {
         price: CANVA_BUSINESS_PRICE_IDR,
         label: 'Canva Business Accounts'
     },
+    proton_vpn_14d_10u: {
+        price: 5000,
+        label: 'Proton VPN • 14 days • 10 users'
+    },
     alight_motion: {
         price: ALIGHT_MOTION_PRICE_IDR,
         pack5_price: ALIGHT_MOTION_PACK5_PRICE_IDR,
@@ -1246,6 +1250,28 @@ function formatOrderQuantitySummary(order) {
         return `${order.quantity} + ${order.bonus_quantity} bonus = ${total} links`;
     }
     return `${order.quantity} links`;
+}
+
+function getOrderProductLabel(order) {
+    if (!order) return 'Unknown product';
+
+    if (isAccountOrder(order)) return getProductLabel('account', 'Spotify Verified Accounts');
+    if (isGptBasicsOrder(order)) return getProductLabel('gpt_basic', 'GPT Basics Accounts');
+    if (isCapcutBasicsOrder(order)) return getProductLabel('capcut_basic', 'CapCut Basics Accounts');
+    if (isGptInviteOrder(order)) return getProductLabel('gpt_invite', 'GPT Business via Invite');
+    if (isGptGoOrder(order)) return getProductLabel('gpt_go', 'GPT Go Plan Accounts');
+    if (isGptGoVccOrder(order)) return getProductLabel('gpt_go_vcc', 'GPT Go VCC Cards');
+    if (isAirwallexVccOrder(order)) return getProductLabel('airwallex_vcc', 'Airwallex VCC Cards');
+    if (isGptPlusOrder(order)) return getProductLabel('gpt_plus', 'GPT Plus Plan Accounts');
+    if (isCanvaBusinessOrder(order)) return getProductLabel('canva_business', 'Canva Business Accounts');
+    if (isAlightMotionOrder(order)) return getProductLabel('alight_motion', 'Alight Motion Accounts');
+    if (isPerplexityOrder(order)) return getProductLabel('perplexity', 'Perplexity AI Links');
+
+    if (order.product && DEFAULT_PRODUCT_SETTINGS[order.product]?.label) {
+        return DEFAULT_PRODUCT_SETTINGS[order.product].label;
+    }
+
+    return order.product || 'Unknown product';
 }
 
 function getCoupons() {
@@ -4314,29 +4340,41 @@ bot.on('callback_query', async (query) => {
             const orderId = parseInt(data.replace('verify_payment_', ''));
             const orders = getOrders();
             const order = orders.find(o => o.order_id === orderId);
-            const isAccountOrder = order?.product === 'account' || order?.type === 'account';
-            const isGptOrder = isGptBasicsOrder(order);
-            const isCapcut = isCapcutBasicsOrder(order);
-            const isGptInvite = isGptInviteOrder(order);
-            const isGptGo = isGptGoOrder(order);
-            const isGptGoVcc = isGptGoVccOrder(order);
-            const isAirwallexVcc = isAirwallexVccOrder(order);
-            const isGptPlus = isGptPlusOrder(order);
-            const isCanvaBusiness = isCanvaBusinessOrder(order);
-            const isAlight = isAlightMotionOrder(order);
-            const isPerplexity = isPerplexityOrder(order);
+            if (order && order.status !== 'awaiting_payment') {
+                bot.answerCallbackQuery(query.id, {
+                    text: '⚠️ Order already processed.',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+            const processingOrder = updateOrder(orderId, {
+                status: 'processing',
+                processing_by: userId,
+                processing_started_at: new Date().toISOString()
+            }) || order;
+            const isAccountOrder = processingOrder?.product === 'account' || processingOrder?.type === 'account';
+            const isGptOrder = isGptBasicsOrder(processingOrder);
+            const isCapcut = isCapcutBasicsOrder(processingOrder);
+            const isGptInvite = isGptInviteOrder(processingOrder);
+            const isGptGo = isGptGoOrder(processingOrder);
+            const isGptGoVcc = isGptGoVccOrder(processingOrder);
+            const isAirwallexVcc = isAirwallexVccOrder(processingOrder);
+            const isGptPlus = isGptPlusOrder(processingOrder);
+            const isCanvaBusiness = isCanvaBusinessOrder(processingOrder);
+            const isAlight = isAlightMotionOrder(processingOrder);
+            const isPerplexity = isPerplexityOrder(processingOrder);
             const isCredential = isAccountOrder || isGptOrder || isCapcut || isGptInvite || isGptGo || isGptGoVcc || isAirwallexVcc || isGptPlus || isCanvaBusiness || isAlight || isPerplexity;
 
-            if (!order) {
+            if (!processingOrder) {
                 bot.answerCallbackQuery(query.id, {
                     text: '❌ Order not found!',
                     show_alert: true
                 }).catch(() => {});
                 return;
             }
-            
-            const deliveryQuantity = isCredential ? (order.quantity || 0) : getOrderTotalQuantity(order);
-            const bonusNote = !isCredential && order.bonus_quantity ? ` (includes +${order.bonus_quantity} bonus)` : '';
+
+            const deliveryQuantity = isCredential ? (processingOrder.quantity || 0) : getOrderTotalQuantity(processingOrder);
+            const bonusNote = !isCredential && processingOrder.bonus_quantity ? ` (includes +${processingOrder.bonus_quantity} bonus)` : '';
 
             bot.editMessageCaption(
                 `⏳ *PROCESSING PAYMENT...*\n\n` +
@@ -4376,40 +4414,40 @@ bot.on('callback_query', async (query) => {
             let delivered = false;
 
             if (isAccountOrder) {
-                const result = await deliverAccounts(order.user_id, orderId, order.quantity);
+                const result = await deliverAccounts(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else if (isGptOrder) {
-                const result = await deliverGptBasics(order.user_id, orderId, order.quantity);
+                const result = await deliverGptBasics(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else if (isCapcut) {
-                const result = await deliverCapcutBasics(order.user_id, orderId, order.quantity);
+                const result = await deliverCapcutBasics(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else if (isGptInvite) {
-                const result = await deliverGptInvite(order.user_id, orderId, order.quantity);
+                const result = await deliverGptInvite(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else if (isGptGo) {
-                const result = await deliverGptGo(order.user_id, orderId, order.quantity);
+                const result = await deliverGptGo(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else if (isGptGoVcc) {
-                const result = await deliverGptGoVcc(order.user_id, orderId, order.quantity, order.original_price || getGptGoVccPrice());
+                const result = await deliverGptGoVcc(processingOrder.user_id, orderId, processingOrder.quantity, processingOrder.original_price || getGptGoVccPrice());
                 delivered = result.success;
             } else if (isAirwallexVcc) {
-                const result = await deliverAirwallexVcc(order.user_id, orderId, order.quantity, order.original_price || getAirwallexVccPrice());
+                const result = await deliverAirwallexVcc(processingOrder.user_id, orderId, processingOrder.quantity, processingOrder.original_price || getAirwallexVccPrice());
                 delivered = result.success;
             } else if (isGptPlus) {
-                const result = await deliverGptPlus(order.user_id, orderId, order.quantity, order.variant || 'nw');
+                const result = await deliverGptPlus(processingOrder.user_id, orderId, processingOrder.quantity, processingOrder.variant || 'nw');
                 delivered = result.success;
             } else if (isCanvaBusiness) {
-                const result = await deliverCanvaBusiness(order.user_id, orderId, order.quantity, order.original_price || getCanvaBusinessPrice());
+                const result = await deliverCanvaBusiness(processingOrder.user_id, orderId, processingOrder.quantity, processingOrder.original_price || getCanvaBusinessPrice());
                 delivered = result.success;
             } else if (isAlight) {
-                const result = await deliverAlightMotion(order.user_id, orderId, order.quantity);
+                const result = await deliverAlightMotion(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else if (isPerplexity) {
-                const result = await deliverPerplexity(order.user_id, orderId, order.quantity);
+                const result = await deliverPerplexity(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else {
-                delivered = await deliverlinks(order.user_id, orderId, order.quantity, order.bonus_quantity || 0);
+                delivered = await deliverlinks(processingOrder.user_id, orderId, processingOrder.quantity, processingOrder.bonus_quantity || 0);
             }
 
             if (delivered) {
@@ -4418,21 +4456,21 @@ bot.on('callback_query', async (query) => {
                     completed_at: new Date().toISOString(),
                     verified_by: userId
                 });
-                
+
                 const users = getUsers();
-                if (users[order.user_id]) {
-                    users[order.user_id].completed_orders = (users[order.user_id].completed_orders || 0) + 1;
+                if (users[processingOrder.user_id]) {
+                    users[processingOrder.user_id].completed_orders = (users[processingOrder.user_id].completed_orders || 0) + 1;
                     saveJSON(USERS_FILE, users);
                 }
-                
-                removePendingPayment(order.user_id, orderId);
-                
+
+                removePendingPayment(processingOrder.user_id, orderId);
+
                 bot.editMessageCaption(
                     `✅ *VERIFIED & DELIVERED!*\n\n` +
                     `📋 Order #${orderId}\n` +
-                    `👤 @${escapeMarkdown(order.username)}\n` +
-                    `📦 ${formatOrderQuantitySummary(order)}\n` +
-                    `💰 Rp ${formatIDR(order.total_price)}\n\n` +
+                    `👤 @${escapeMarkdown(processingOrder.username)}\n` +
+                    `📦 ${formatOrderQuantitySummary(processingOrder)}\n` +
+                    `💰 Rp ${formatIDR(processingOrder.total_price)}\n\n` +
                     `✅ ${
                         isAccountOrder
                             ? 'Account(s) sent!'
@@ -4464,6 +4502,10 @@ bot.on('callback_query', async (query) => {
                     }
                 ).catch(() => {});
             } else {
+                updateOrder(orderId, {
+                    status: 'awaiting_stock',
+                    awaiting_stock_at: new Date().toISOString()
+                });
                 bot.editMessageCaption(
                     `❌ *INSUFFICIENT STOCK!*\n\n` +
                     `Order #${orderId}\n` +
@@ -9809,12 +9851,13 @@ else if (data.startsWith('claim_gift_')) {
             }
             
             let text = '📝 *MY ORDERS*\n\n';
-            
+
             orders.slice(-10).reverse().forEach(order => {
-                const emoji = order.status === 'completed' ? '✅' : 
-                             order.status === 'awaiting_payment' ? '⏳' : 
+                const emoji = order.status === 'completed' ? '✅' :
+                             order.status === 'awaiting_payment' ? '⏳' :
                              order.status === 'expired' ? '⏰' : '❌';
                 text += `${emoji} Order #${order.order_id}\n`;
+                text += `   Product: ${escapeMarkdown(getOrderProductLabel(order))}\n`;
                 text += `   Qty: ${formatOrderQuantitySummary(order)}\n`;
                 text += `   Total: Rp ${formatIDR(order.total_price)}\n`;
                 if (order.coupon_code) {
@@ -10044,11 +10087,12 @@ else if (data.startsWith('claim_gift_')) {
             let text = '📝 *ALL ORDERS* (Last 15)\n\n';
             
             orders.forEach(order => {
-                const emoji = order.status === 'completed' ? '✅' : 
-                             order.status === 'awaiting_payment' ? '⏳' : 
+                const emoji = order.status === 'completed' ? '✅' :
+                             order.status === 'awaiting_payment' ? '⏳' :
                              order.status === 'expired' ? '⏰' : '❌';
-                
+
                 text += `${emoji} #${order.order_id} - @${escapeMarkdown(order.username)}\n`;
+                text += `   Product: ${escapeMarkdown(getOrderProductLabel(order))}\n`;
                 text += `   Qty: ${formatOrderQuantitySummary(order)} | Rp ${formatIDR(order.total_price)}\n`;
                 if (order.coupon_code) {
                     text += `   Coupon: ${order.coupon_code} (-${order.discount_percent}%)\n`;
