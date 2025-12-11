@@ -66,6 +66,7 @@ const BONUSES_FILE = 'bonuses.json';
 const ACCOUNTS_FILE = 'accounts.json';
 const CUSTOM_CONTENT_FILE = 'custom_content.json';
 const PRODUCT_SETTINGS_FILE = 'product_settings.json';
+const PROTON_VPN_FILE = 'proton_vpn.json';
 const GPT_BASICS_FILE = 'gpt_basics.json';
 const CAPCUT_BASICS_FILE = 'capcut_basics.json';
 const GPT_INVITE_FILE = 'gpt_invite.json';
@@ -115,6 +116,10 @@ const DEFAULT_PRODUCT_SETTINGS = {
     canva_business: {
         price: CANVA_BUSINESS_PRICE_IDR,
         label: 'Canva Business Accounts'
+    },
+    proton_vpn_14d_10u: {
+        price: 5000,
+        label: 'Proton VPN • 14 days • 10 users'
     },
     alight_motion: {
         price: ALIGHT_MOTION_PRICE_IDR,
@@ -273,7 +278,8 @@ function buildAdminMainKeyboard() {
             [{ text: '📩 GPT via Invite', callback_data: 'admin_gpt_invite' }, { text: '🎬 Alight Motion', callback_data: 'admin_alight_motion' }],
             [{ text: '🚀 GPT Go', callback_data: 'admin_gpt_go' }, { text: '✨ GPT Plus', callback_data: 'admin_gpt_plus' }],
             [{ text: '💳 GPT Go VCC', callback_data: 'admin_gpt_go_vcc' }, { text: '🌐 Airwallex VCC', callback_data: 'admin_airwallex_vcc' }],
-            [{ text: '🧠 Perplexity AI', callback_data: 'admin_perplexity' }, { text: '💵 Pricing', callback_data: 'admin_pricing' }],
+            [{ text: '🧠 Perplexity AI', callback_data: 'admin_perplexity' }, { text: '🛡️ Proton VPN', callback_data: 'admin_proton_vpn' }],
+            [{ text: '💵 Pricing', callback_data: 'admin_pricing' }],
             [{ text: '🏷️ Product Labels & Prices', callback_data: 'admin_product_settings' }],
             [{ text: '🎟️ Coupons', callback_data: 'admin_coupons' }, { text: '📋 Pending Top-ups', callback_data: 'admin_pending_topups' }],
             [{ text: '📱 GoPay', callback_data: 'admin_qris' }, { text: '💰 Add Balance', callback_data: 'admin_add_balance' }],
@@ -291,6 +297,7 @@ function buildUserMainKeyboard() {
             [{ text: '🎵 Spotify', callback_data: 'menu_spotify' }],
             [{ text: '🤖 GPT', callback_data: 'menu_gpt' }],
             [{ text: '🎨 Canva Business', callback_data: 'canva_business' }],
+            [{ text: `🛡️ ${getProductLabel('proton_vpn_14d_10u', 'Proton VPN 14d/10u')} (${formatProtonVpnPriceSummary()})`, callback_data: 'buy_proton_vpn' }],
             [{ text: '💳 VCC', callback_data: 'menu_vcc' }],
             [{ text: `🎞️ ${getProductLabel('capcut_basic', 'CapCut Basics')} (Rp ${formatIDR(getCapcutBasicsPrice())})`, callback_data: 'buy_capcut_basics' }],
             [{ text: `🎬 ${getProductLabel('alight_motion', 'Alight Motion')} (${formatAlightPriceSummary()})`, callback_data: 'buy_alight_motion' }],
@@ -312,6 +319,7 @@ function getAvailabilitySnapshot() {
     const gptGoStock = getGptGoStock();
     const gptPlusStock = getGptPlusStock();
     const canvaStock = getCanvaBusinessStock();
+    const protonStock = getProtonVpnStock();
     const alightStock = getAlightMotionStock();
     const perplexityStock = getPerplexityStock();
     const gptGoVccStock = getGptGoVccStock();
@@ -326,6 +334,7 @@ function getAvailabilitySnapshot() {
         gpt_go: gptGoStock.accounts?.length || 0,
         gpt_plus: gptPlusStock.accounts?.length || 0,
         canva: canvaStock.accounts?.length || 0,
+        proton_vpn: protonStock.accounts?.length || 0,
         alight: alightStock.accounts?.length || 0,
         perplexity: perplexityStock.links?.length || 0,
         gpt_go_vcc: (gptGoVccStock.cards || []).length,
@@ -341,6 +350,7 @@ function buildAvailabilityText(snapshot) {
         `🚀 ${escapeMarkdown(getProductLabel('gpt_go', 'GPT Go'))}: ${formatGptGoPriceSummary()} | Stock: ${snapshot.gpt_go}`,
         `✨ ${escapeMarkdown(getProductLabel('gpt_plus', 'GPT Plus'))}: ${formatGptPlusPriceSummary()} | Stock: ${snapshot.gpt_plus}`,
         `🎨 ${escapeMarkdown(getProductLabel('canva_business', 'Canva Business'))}: ${formatCanvaBusinessPriceSummary()} | Stock: ${snapshot.canva}`,
+        `🛡️ ${escapeMarkdown(getProductLabel('proton_vpn_14d_10u', 'Proton VPN'))}: ${formatProtonVpnPriceSummary()} | Stock: ${snapshot.proton_vpn}`,
         `🎞️ ${escapeMarkdown(getProductLabel('capcut_basic', 'CapCut Basics Accounts'))}: Rp ${formatIDR(getCapcutBasicsPrice())} | Stock: ${snapshot.capcut}`,
         `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion Accounts'))}: ${formatAlightPriceSummary()} | Stock: ${snapshot.alight}`,
         `🧠 ${escapeMarkdown(getPerplexityConfig().label)}: ${formatPerplexityPriceSummary()} | Stock: ${snapshot.perplexity}`,
@@ -510,6 +520,14 @@ function getCanvaBusinessStock() {
 
 function updateCanvaBusinessStock(accounts = []) {
     saveJSON(CANVA_BUSINESS_FILE, { accounts });
+}
+
+function getProtonVpnStock() {
+    return normalizeAccountStock(loadJSON(PROTON_VPN_FILE, { accounts: [] }));
+}
+
+function updateProtonVpnStock(accounts = []) {
+    saveJSON(PROTON_VPN_FILE, { accounts });
 }
 
 // Alias for backward compatibility; ChatGPT Plus uses the same stock as GPT Plus
@@ -981,8 +999,18 @@ function getCanvaBusinessPrice() {
     return !isNaN(price) && price > 0 ? price : CANVA_BUSINESS_PRICE_IDR;
 }
 
+function getProtonVpnPrice() {
+    const settings = getProductSettings();
+    const price = parseInt(settings?.proton_vpn_14d_10u?.price);
+    return !isNaN(price) && price > 0 ? price : DEFAULT_PRODUCT_SETTINGS.proton_vpn_14d_10u.price;
+}
+
 function formatCanvaBusinessPriceSummary() {
     return `Rp ${formatIDR(getCanvaBusinessPrice())} per account`;
+}
+
+function formatProtonVpnPriceSummary() {
+    return `Rp ${formatIDR(getProtonVpnPrice())} per account`;
 }
 
 function normalizeGptPlusVariant(variant = 'nw') {
@@ -1046,6 +1074,7 @@ function buildProductPriceSummaryLines() {
         `🚀 ${escapeMarkdown(getProductLabel('gpt_go', 'GPT Go'))}: ${formatGptGoPriceSummary()}`,
         `✨ ${escapeMarkdown(getProductLabel('gpt_plus', 'GPT Plus'))}: ${formatGptPlusPriceSummary()}`,
         `🎨 ${escapeMarkdown(getProductLabel('canva_business', 'Canva Business'))}: ${formatCanvaBusinessPriceSummary()}`,
+        `🛡️ ${escapeMarkdown(getProductLabel('proton_vpn_14d_10u', 'Proton VPN'))}: ${formatProtonVpnPriceSummary()}`,
         `🎬 ${escapeMarkdown(getProductLabel('alight_motion', 'Alight Motion'))}: ${formatAlightPriceSummary()}`,
         `🧠 ${escapeMarkdown(settings.perplexity?.label || 'Perplexity AI')}: ${formatPerplexityPriceSummary()}`
     ];
@@ -1156,6 +1185,11 @@ function isCanvaBusinessOrder(order) {
     return order.product === 'canva_business' || order.type === 'canva_business';
 }
 
+function isProtonVpnOrder(order) {
+    if (!order) return false;
+    return order.product === 'proton_vpn_14d_10u' || order.type === 'proton_vpn_14d_10u';
+}
+
 function isAlightMotionOrder(order) {
     if (!order) return false;
     return order.product === 'alight_motion' || order.type === 'alight_motion';
@@ -1176,6 +1210,7 @@ function isCredentialOrder(order) {
         || isAirwallexVccOrder(order)
         || isGptPlusOrder(order)
         || isCanvaBusinessOrder(order)
+        || isProtonVpnOrder(order)
         || isAlightMotionOrder(order)
         || isPerplexityOrder(order);
 }
@@ -1246,6 +1281,29 @@ function formatOrderQuantitySummary(order) {
         return `${order.quantity} + ${order.bonus_quantity} bonus = ${total} links`;
     }
     return `${order.quantity} links`;
+}
+
+function getOrderProductLabel(order) {
+    if (!order) return 'Unknown product';
+
+    if (isAccountOrder(order)) return getProductLabel('account', 'Spotify Verified Accounts');
+    if (isGptBasicsOrder(order)) return getProductLabel('gpt_basic', 'GPT Basics Accounts');
+    if (isCapcutBasicsOrder(order)) return getProductLabel('capcut_basic', 'CapCut Basics Accounts');
+    if (isGptInviteOrder(order)) return getProductLabel('gpt_invite', 'GPT Business via Invite');
+    if (isGptGoOrder(order)) return getProductLabel('gpt_go', 'GPT Go Plan Accounts');
+    if (isGptGoVccOrder(order)) return getProductLabel('gpt_go_vcc', 'GPT Go VCC Cards');
+    if (isAirwallexVccOrder(order)) return getProductLabel('airwallex_vcc', 'Airwallex VCC Cards');
+    if (isGptPlusOrder(order)) return getProductLabel('gpt_plus', 'GPT Plus Plan Accounts');
+    if (isCanvaBusinessOrder(order)) return getProductLabel('canva_business', 'Canva Business Accounts');
+    if (isProtonVpnOrder(order)) return getProductLabel('proton_vpn_14d_10u', 'Proton VPN • 14 days • 10 users');
+    if (isAlightMotionOrder(order)) return getProductLabel('alight_motion', 'Alight Motion Accounts');
+    if (isPerplexityOrder(order)) return getProductLabel('perplexity', 'Perplexity AI Links');
+
+    if (order.product && DEFAULT_PRODUCT_SETTINGS[order.product]?.label) {
+        return DEFAULT_PRODUCT_SETTINGS[order.product].label;
+    }
+
+    return order.product || 'Unknown product';
 }
 
 function getCoupons() {
@@ -1367,6 +1425,7 @@ const PRODUCT_TO_QUANTITY_STATE = {
     'gpt_plus': 'gpt_plus',
     'alight_motion': 'alight',
     'perplexity_ai': 'perplexity',
+    'proton_vpn_14d_10u': 'proton_vpn',
     'account': 'account'
 };
 
@@ -2031,6 +2090,43 @@ async function deliverCanvaBusiness(userId, orderId, quantity, pricePerAccount =
     } catch (error) {
         console.error('Error delivering Canva Business:', error.message);
         return { success: false, message: '❌ Failed to deliver Canva Business account(s).' };
+    }
+}
+
+async function deliverProtonVpn(userId, orderId, quantity, pricePerAccount = getProtonVpnPrice()) {
+    try {
+        const stock = getProtonVpnStock();
+
+        const previousCount = stock.accounts ? stock.accounts.length : 0;
+
+        if (!stock.accounts || stock.accounts.length < quantity) {
+            return { success: false, message: '❌ Not enough Proton VPN accounts available to deliver!' };
+        }
+
+        const delivered = stock.accounts.splice(0, quantity);
+        updateProtonVpnStock(stock.accounts);
+        notifyOutOfStockIfDepleted(previousCount, stock.accounts.length, getProductLabel('proton_vpn_14d_10u', 'Proton VPN'));
+
+        const credentials = delivered
+            .map(acc => `• \`${escapeInlineCode(acc)}\``)
+            .join('\n');
+
+        const totalPrice = quantity * pricePerAccount;
+
+        const message =
+            `✅ *PROTON VPN DELIVERED!*\\n\\n` +
+            `📋 Order #: ${orderId}\\n` +
+            `🔢 Quantity: ${quantity}\\n` +
+            `💵 Total: Rp ${formatIDR(totalPrice)} (${formatIDR(pricePerAccount)} each)\\n\\n` +
+            `🔑 Credentials:\\n${credentials}\\n\\n` +
+            `📱 Support: ${ADMIN_USERNAME}`;
+
+        await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
+
+        return { success: true, delivered };
+    } catch (error) {
+        console.error('Error delivering Proton VPN:', error.message);
+        return { success: false, message: '❌ Failed to deliver Proton VPN account(s).' };
     }
 }
 
@@ -2836,6 +2932,19 @@ function broadcastCanvaBusinessRestock(addedCount, totalCount) {
         `🖌️ Total Stock: *${totalCount}* ready to claim`,
         '',
         `💵 Price: ${formatCanvaBusinessPriceSummary()}`,
+        '⚡ Order now before stock runs out!'
+    ].join('\n');
+
+    return broadcastToAll(message, { parse_mode: 'Markdown' });
+}
+
+function broadcastProtonVpnRestock(addedCount, totalCount) {
+    const message = [
+        '🛡️ *PROTON VPN RESTOCKED!*',
+        `📤 Added: *${addedCount}* account${addedCount > 1 ? 's' : ''}`,
+        `🌐 Total Stock: *${totalCount}* ready to claim`,
+        '',
+        `💵 Price: ${formatProtonVpnPriceSummary()}`,
         '⚡ Order now before stock runs out!'
     ].join('\n');
 
@@ -3829,13 +3938,14 @@ bot.on('document', (msg) => {
         const isGptGoUpload = uploadMode === 'awaiting_gpt_go_upload';
         const isGptPlusUpload = uploadMode === 'awaiting_gpt_plus_upload';
         const isCanvaBusinessUpload = uploadMode === 'awaiting_canva_business_upload';
+        const isProtonVpnUpload = uploadMode === 'awaiting_proton_vpn_upload';
         const isAlightUpload = uploadMode === 'awaiting_alight_upload';
         const isPerplexityUpload = uploadMode === 'awaiting_perplexity_upload';
         const isGptGoVccUpload = uploadMode === 'awaiting_gpt_go_vcc_upload';
         const isAirwallexVccUpload = uploadMode === 'awaiting_airwallex_vcc_upload';
-        const isLinkUpload = uploadMode === 'awaiting_stock_upload' || (!uploadMode && !isGptUpload && !isCapcutUpload && !isPerplexityUpload && !isGptInviteUpload && !isAlightUpload && !isGptGoUpload && !isGptPlusUpload && !isGptGoVccUpload && !isAirwallexVccUpload && !isCanvaBusinessUpload);
+        const isLinkUpload = uploadMode === 'awaiting_stock_upload' || (!uploadMode && !isGptUpload && !isCapcutUpload && !isPerplexityUpload && !isGptInviteUpload && !isAlightUpload && !isGptGoUpload && !isGptPlusUpload && !isGptGoVccUpload && !isAirwallexVccUpload && !isCanvaBusinessUpload && !isProtonVpnUpload);
 
-        if (!isAccountUpload && !isLinkUpload && !isGptUpload && !isCapcutUpload && !isPerplexityUpload && !isGptInviteUpload && !isAlightUpload && !isGptGoUpload && !isGptPlusUpload && !isGptGoVccUpload && !isAirwallexVccUpload && !isCanvaBusinessUpload) return;
+        if (!isAccountUpload && !isLinkUpload && !isGptUpload && !isCapcutUpload && !isPerplexityUpload && !isGptInviteUpload && !isAlightUpload && !isGptGoUpload && !isGptPlusUpload && !isGptGoVccUpload && !isAirwallexVccUpload && !isCanvaBusinessUpload && !isProtonVpnUpload) return;
 
         const document = msg.document;
         
@@ -3844,7 +3954,7 @@ bot.on('document', (msg) => {
             return;
         }
         
-        const uploadingText = (isAccountUpload || isGptUpload || isCapcutUpload || isPerplexityUpload || isGptInviteUpload || isAlightUpload || isGptGoUpload || isGptPlusUpload || isGptGoVccUpload || isAirwallexVccUpload || isCanvaBusinessUpload) ? '⏳ Uploading accounts...' : '⏳ Uploading links...';
+        const uploadingText = (isAccountUpload || isGptUpload || isCapcutUpload || isPerplexityUpload || isGptInviteUpload || isAlightUpload || isGptGoUpload || isGptPlusUpload || isGptGoVccUpload || isAirwallexVccUpload || isCanvaBusinessUpload || isProtonVpnUpload) ? '⏳ Uploading accounts...' : '⏳ Uploading links...';
 
         bot.sendMessage(chatId, uploadingText).then(statusMsg => {
             bot.getFile(document.file_id).then(file => {
@@ -3857,7 +3967,7 @@ bot.on('document', (msg) => {
                     res.on('end', () => {
                         const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-                        if (isAccountUpload || isGptUpload || isCapcutUpload || isPerplexityUpload || isGptInviteUpload || isAlightUpload || isGptGoUpload || isGptPlusUpload || isGptGoVccUpload || isAirwallexVccUpload || isCanvaBusinessUpload) {
+                        if (isAccountUpload || isGptUpload || isCapcutUpload || isPerplexityUpload || isGptInviteUpload || isAlightUpload || isGptGoUpload || isGptPlusUpload || isGptGoVccUpload || isAirwallexVccUpload || isCanvaBusinessUpload || isProtonVpnUpload) {
                             if (lines.length === 0) {
                                 bot.editMessageText(
                                     '❌ No valid accounts found! Add one credential per line.',
@@ -3920,6 +4030,27 @@ bot.on('document', (msg) => {
                                     `✅ *CANVA BUSINESS UPLOADED!*\\n\\n` +
                                     `📤 Added: ${lines.length} accounts\\n` +
                                     `🎨 Total Canva Business: ${merged.length}\\n\\n` +
+                                    `Thank you!`,
+                                    {
+                                        chat_id: chatId,
+                                        message_id: statusMsg.message_id,
+                                        parse_mode: 'Markdown'
+                                    }
+                                ).catch(() => {});
+
+                                delete userStates[chatId];
+                                return;
+                            } else if (isProtonVpnUpload) {
+                                const protonStock = getProtonVpnStock();
+                                const merged = [...(protonStock.accounts || []), ...lines];
+                                updateProtonVpnStock(merged);
+
+                                broadcastProtonVpnRestock(lines.length, merged.length).catch(() => {});
+
+                                bot.editMessageText(
+                                    `✅ *PROTON VPN UPLOADED!*\\n\\n` +
+                                    `📤 Added: ${lines.length} accounts\\n` +
+                                    `🛡️ Total Proton VPN: ${merged.length}\\n\\n` +
                                     `Thank you!`,
                                     {
                                         chat_id: chatId,
@@ -4314,29 +4445,42 @@ bot.on('callback_query', async (query) => {
             const orderId = parseInt(data.replace('verify_payment_', ''));
             const orders = getOrders();
             const order = orders.find(o => o.order_id === orderId);
-            const isAccountOrder = order?.product === 'account' || order?.type === 'account';
-            const isGptOrder = isGptBasicsOrder(order);
-            const isCapcut = isCapcutBasicsOrder(order);
-            const isGptInvite = isGptInviteOrder(order);
-            const isGptGo = isGptGoOrder(order);
-            const isGptGoVcc = isGptGoVccOrder(order);
-            const isAirwallexVcc = isAirwallexVccOrder(order);
-            const isGptPlus = isGptPlusOrder(order);
-            const isCanvaBusiness = isCanvaBusinessOrder(order);
-            const isAlight = isAlightMotionOrder(order);
-            const isPerplexity = isPerplexityOrder(order);
-            const isCredential = isAccountOrder || isGptOrder || isCapcut || isGptInvite || isGptGo || isGptGoVcc || isAirwallexVcc || isGptPlus || isCanvaBusiness || isAlight || isPerplexity;
+            if (order && order.status !== 'awaiting_payment') {
+                bot.answerCallbackQuery(query.id, {
+                    text: '⚠️ Order already processed.',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+            const processingOrder = updateOrder(orderId, {
+                status: 'processing',
+                processing_by: userId,
+                processing_started_at: new Date().toISOString()
+            }) || order;
+            const isAccountOrder = processingOrder?.product === 'account' || processingOrder?.type === 'account';
+            const isGptOrder = isGptBasicsOrder(processingOrder);
+            const isCapcut = isCapcutBasicsOrder(processingOrder);
+            const isGptInvite = isGptInviteOrder(processingOrder);
+            const isGptGo = isGptGoOrder(processingOrder);
+            const isGptGoVcc = isGptGoVccOrder(processingOrder);
+            const isAirwallexVcc = isAirwallexVccOrder(processingOrder);
+            const isGptPlus = isGptPlusOrder(processingOrder);
+            const isCanvaBusiness = isCanvaBusinessOrder(processingOrder);
+            const isProtonVpn = isProtonVpnOrder(processingOrder);
+            const isAlight = isAlightMotionOrder(processingOrder);
+            const isPerplexity = isPerplexityOrder(processingOrder);
+            const isCredential = isAccountOrder || isGptOrder || isCapcut || isGptInvite || isGptGo || isGptGoVcc || isAirwallexVcc || isGptPlus || isCanvaBusiness || isProtonVpn || isAlight || isPerplexity;
 
-            if (!order) {
+            if (!processingOrder) {
                 bot.answerCallbackQuery(query.id, {
                     text: '❌ Order not found!',
                     show_alert: true
                 }).catch(() => {});
                 return;
             }
-            
-            const deliveryQuantity = isCredential ? (order.quantity || 0) : getOrderTotalQuantity(order);
-            const bonusNote = !isCredential && order.bonus_quantity ? ` (includes +${order.bonus_quantity} bonus)` : '';
+
+            const deliveryQuantity = isCredential ? (processingOrder.quantity || 0) : getOrderTotalQuantity(processingOrder);
+            const bonusNote = !isCredential && processingOrder.bonus_quantity ? ` (includes +${processingOrder.bonus_quantity} bonus)` : '';
 
             bot.editMessageCaption(
                 `⏳ *PROCESSING PAYMENT...*\n\n` +
@@ -4360,11 +4504,13 @@ bot.on('callback_query', async (query) => {
                                                     ? 'GPT Plus account(s)'
                                                     : isCanvaBusiness
                                                         ? 'Canva Business account(s)'
-                                                        : isAlight
-                                                            ? 'Alight Motion account(s)'
-                                                            : isPerplexity
-                                                                ? 'Perplexity link(s)'
-                                                                : 'links'
+                                                        : isProtonVpn
+                                                            ? 'Proton VPN account(s)'
+                                                            : isAlight
+                                                                ? 'Alight Motion account(s)'
+                                                                : isPerplexity
+                                                                    ? 'Perplexity link(s)'
+                                                                    : 'links'
                 }${bonusNote}...`,
                 {
                     chat_id: chatId,
@@ -4376,40 +4522,43 @@ bot.on('callback_query', async (query) => {
             let delivered = false;
 
             if (isAccountOrder) {
-                const result = await deliverAccounts(order.user_id, orderId, order.quantity);
+                const result = await deliverAccounts(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else if (isGptOrder) {
-                const result = await deliverGptBasics(order.user_id, orderId, order.quantity);
+                const result = await deliverGptBasics(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else if (isCapcut) {
-                const result = await deliverCapcutBasics(order.user_id, orderId, order.quantity);
+                const result = await deliverCapcutBasics(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else if (isGptInvite) {
-                const result = await deliverGptInvite(order.user_id, orderId, order.quantity);
+                const result = await deliverGptInvite(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else if (isGptGo) {
-                const result = await deliverGptGo(order.user_id, orderId, order.quantity);
+                const result = await deliverGptGo(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else if (isGptGoVcc) {
-                const result = await deliverGptGoVcc(order.user_id, orderId, order.quantity, order.original_price || getGptGoVccPrice());
+                const result = await deliverGptGoVcc(processingOrder.user_id, orderId, processingOrder.quantity, processingOrder.original_price || getGptGoVccPrice());
                 delivered = result.success;
             } else if (isAirwallexVcc) {
-                const result = await deliverAirwallexVcc(order.user_id, orderId, order.quantity, order.original_price || getAirwallexVccPrice());
+                const result = await deliverAirwallexVcc(processingOrder.user_id, orderId, processingOrder.quantity, processingOrder.original_price || getAirwallexVccPrice());
                 delivered = result.success;
             } else if (isGptPlus) {
-                const result = await deliverGptPlus(order.user_id, orderId, order.quantity, order.variant || 'nw');
+                const result = await deliverGptPlus(processingOrder.user_id, orderId, processingOrder.quantity, processingOrder.variant || 'nw');
                 delivered = result.success;
             } else if (isCanvaBusiness) {
-                const result = await deliverCanvaBusiness(order.user_id, orderId, order.quantity, order.original_price || getCanvaBusinessPrice());
+                const result = await deliverCanvaBusiness(processingOrder.user_id, orderId, processingOrder.quantity, processingOrder.original_price || getCanvaBusinessPrice());
+                delivered = result.success;
+            } else if (isProtonVpn) {
+                const result = await deliverProtonVpn(processingOrder.user_id, orderId, processingOrder.quantity, processingOrder.original_price || getProtonVpnPrice());
                 delivered = result.success;
             } else if (isAlight) {
-                const result = await deliverAlightMotion(order.user_id, orderId, order.quantity);
+                const result = await deliverAlightMotion(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else if (isPerplexity) {
-                const result = await deliverPerplexity(order.user_id, orderId, order.quantity);
+                const result = await deliverPerplexity(processingOrder.user_id, orderId, processingOrder.quantity);
                 delivered = result.success;
             } else {
-                delivered = await deliverlinks(order.user_id, orderId, order.quantity, order.bonus_quantity || 0);
+                delivered = await deliverlinks(processingOrder.user_id, orderId, processingOrder.quantity, processingOrder.bonus_quantity || 0);
             }
 
             if (delivered) {
@@ -4418,21 +4567,21 @@ bot.on('callback_query', async (query) => {
                     completed_at: new Date().toISOString(),
                     verified_by: userId
                 });
-                
+
                 const users = getUsers();
-                if (users[order.user_id]) {
-                    users[order.user_id].completed_orders = (users[order.user_id].completed_orders || 0) + 1;
+                if (users[processingOrder.user_id]) {
+                    users[processingOrder.user_id].completed_orders = (users[processingOrder.user_id].completed_orders || 0) + 1;
                     saveJSON(USERS_FILE, users);
                 }
-                
-                removePendingPayment(order.user_id, orderId);
-                
+
+                removePendingPayment(processingOrder.user_id, orderId);
+
                 bot.editMessageCaption(
                     `✅ *VERIFIED & DELIVERED!*\n\n` +
                     `📋 Order #${orderId}\n` +
-                    `👤 @${escapeMarkdown(order.username)}\n` +
-                    `📦 ${formatOrderQuantitySummary(order)}\n` +
-                    `💰 Rp ${formatIDR(order.total_price)}\n\n` +
+                    `👤 @${escapeMarkdown(processingOrder.username)}\n` +
+                    `📦 ${formatOrderQuantitySummary(processingOrder)}\n` +
+                    `💰 Rp ${formatIDR(processingOrder.total_price)}\n\n` +
                     `✅ ${
                         isAccountOrder
                             ? 'Account(s) sent!'
@@ -4450,11 +4599,13 @@ bot.on('callback_query', async (query) => {
                                                     ? 'GPT Plus sent!'
                                                     : isCanvaBusiness
                                                         ? 'Canva Business sent!'
-                                                        : isAlight
-                                                            ? 'Alight Motion sent!'
-                                                            : isPerplexity
-                                                                ? 'Perplexity links sent!'
-                                                                : 'links sent!'
+                                                        : isProtonVpn
+                                                            ? 'Proton VPN sent!'
+                                                            : isAlight
+                                                                ? 'Alight Motion sent!'
+                                                                : isPerplexity
+                                                                    ? 'Perplexity links sent!'
+                                                                    : 'links sent!'
                     }\n` +
                     `⏰ ${getCurrentDateTime()}`,
                     {
@@ -4464,6 +4615,10 @@ bot.on('callback_query', async (query) => {
                     }
                 ).catch(() => {});
             } else {
+                updateOrder(orderId, {
+                    status: 'awaiting_stock',
+                    awaiting_stock_at: new Date().toISOString()
+                });
                 bot.editMessageCaption(
                     `❌ *INSUFFICIENT STOCK!*\n\n` +
                     `Order #${orderId}\n` +
@@ -5144,6 +5299,7 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '🚀 Edit GPT Go', callback_data: 'edit_product_gpt_go' }],
                     [{ text: '✨ Edit GPT Plus', callback_data: 'edit_product_gpt_plus' }],
                     [{ text: '🎨 Edit Canva Business', callback_data: 'edit_product_canva_business' }],
+                    [{ text: '🛡️ Edit Proton VPN', callback_data: 'edit_product_proton_vpn_14d_10u' }],
                     [{ text: '🎬 Edit Alight Motion', callback_data: 'edit_product_alight_motion' }],
                     [{ text: '🧠 Edit Perplexity AI', callback_data: 'edit_product_perplexity' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
@@ -5229,6 +5385,7 @@ else if (data.startsWith('claim_gift_')) {
                     [{ text: '🚀 Edit GPT Go', callback_data: 'edit_product_gpt_go' }],
                     [{ text: '✨ Edit GPT Plus', callback_data: 'edit_product_gpt_plus' }],
                     [{ text: '🎨 Edit Canva Business', callback_data: 'edit_product_canva_business' }],
+                    [{ text: '🛡️ Edit Proton VPN', callback_data: 'edit_product_proton_vpn_14d_10u' }],
                     [{ text: '🎬 Edit Alight Motion', callback_data: 'edit_product_alight_motion' }],
                     [{ text: '🧠 Edit Perplexity AI', callback_data: 'edit_product_perplexity' }],
                     [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
@@ -5773,6 +5930,28 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        else if (data === 'admin_proton_vpn') {
+            if (!isAdmin(userId)) return;
+
+            const protonStock = getProtonVpnStock();
+            const available = protonStock.accounts?.length || 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '📤 Upload Proton VPN File', callback_data: 'upload_proton_vpn_instruction' }],
+                    [{ text: '📊 Check Proton VPN Stock', callback_data: 'check_proton_vpn_stock' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🛡️ *PROTON VPN STOCK*\\n\\n` +
+                `📦 Current Proton VPN accounts: ${available}\\n\\n` +
+                `Choose an option below:`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
         else if (data === 'upload_account_instruction') {
             if (!isAdmin(userId)) return;
 
@@ -5836,6 +6015,23 @@ else if (data.startsWith('claim_gift_')) {
                 `email:password\n` +
                 `user|pass\n\n` +
                 `Keep each Canva Business account on its own line.\n` +
+                `💡 Uploads auto-broadcast the restock to users.`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+
+        else if (data === 'upload_proton_vpn_instruction') {
+            if (!isAdmin(userId)) return;
+
+            userStates[chatId] = { state: 'awaiting_proton_vpn_upload' };
+
+            bot.sendMessage(chatId,
+                `📤 *UPLOAD PROTON VPN*\\n\\n` +
+                `Send a .txt file now with one credential per line.\\n\\n` +
+                `Example:\\n` +
+                `email:password\\n` +
+                `user|pass\\n\\n` +
+                `Keep each Proton VPN account on its own line.\\n` +
                 `💡 Uploads auto-broadcast the restock to users.`,
                 { parse_mode: 'Markdown' }
             ).catch(() => {});
@@ -6006,6 +6202,18 @@ else if (data.startsWith('claim_gift_')) {
 
             bot.answerCallbackQuery(query.id, {
                 text: `📦 Canva Business available: ${available}`,
+                show_alert: true
+            }).catch(() => {});
+        }
+
+        else if (data === 'check_proton_vpn_stock') {
+            if (!isAdmin(userId)) return;
+
+            const protonStock = getProtonVpnStock();
+            const available = protonStock.accounts?.length || 0;
+
+            bot.answerCallbackQuery(query.id, {
+                text: `📦 Proton VPN available: ${available}`,
                 show_alert: true
             }).catch(() => {});
         }
@@ -7901,6 +8109,34 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        else if (data === 'buy_proton_vpn') {
+            const protonStock = getProtonVpnStock();
+            const available = protonStock.accounts?.length || 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '💳 Pay with Balance', callback_data: 'pay_proton_vpn_balance' }],
+                    [{ text: '📱 Pay via QRIS', callback_data: 'pay_proton_vpn_qris' }],
+                    [{ text: '💵 Top Up Balance', callback_data: 'topup_balance' }],
+                    [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                ]
+            };
+
+            const statusLine = available === 0
+                ? '❌ Out of stock! Please upload more Proton VPN accounts.'
+                : '✅ Choose payment method below.';
+
+            bot.editMessageText(
+                `🛡️ *BUY PROTON VPN*\\n\\n` +
+                `💵 Price: ${formatProtonVpnPriceSummary()}\\n` +
+                `📦 Accounts available: ${available}\\n\\n` +
+                `${statusLine}\\n\\n` +
+                `📌 You can buy 1 up to ${Math.max(1, Math.min(MAX_ORDER_QUANTITY, available))} accounts depending on stock.`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
         else if (data === 'buy_gpt_go_vcc') {
             const stock = getGptGoVccStock();
             const available = stock.cards?.length || 0;
@@ -8389,6 +8625,54 @@ else if (data.startsWith('claim_gift_')) {
                 quantity: 1,
                 payment_method: 'qris',
                 back_callback: 'buy_canva_business'
+            });
+        }
+
+        else if (data === 'pay_proton_vpn_balance') {
+            const protonStock = getProtonVpnStock();
+            const available = protonStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Proton VPN in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            showQuantityPicker(query.message, {
+                product: 'proton_vpn_14d_10u',
+                label: getProductLabel('proton_vpn_14d_10u', 'Proton VPN 14d/10u'),
+                unitPrice: getProtonVpnPrice(),
+                max: maxQuantity,
+                quantity: 1,
+                payment_method: 'balance',
+                back_callback: 'buy_proton_vpn'
+            });
+        }
+
+        else if (data === 'pay_proton_vpn_qris') {
+            const protonStock = getProtonVpnStock();
+            const available = protonStock.accounts?.length || 0;
+            const maxQuantity = Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+
+            if (available === 0) {
+                bot.answerCallbackQuery(query.id, {
+                    text: '❌ No Proton VPN in stock!',
+                    show_alert: true
+                }).catch(() => {});
+                return;
+            }
+
+            showQuantityPicker(query.message, {
+                product: 'proton_vpn_14d_10u',
+                label: getProductLabel('proton_vpn_14d_10u', 'Proton VPN 14d/10u'),
+                unitPrice: getProtonVpnPrice(),
+                max: maxQuantity,
+                quantity: 1,
+                payment_method: 'qris',
+                back_callback: 'buy_proton_vpn'
             });
         }
 
@@ -9809,12 +10093,13 @@ else if (data.startsWith('claim_gift_')) {
             }
             
             let text = '📝 *MY ORDERS*\n\n';
-            
+
             orders.slice(-10).reverse().forEach(order => {
-                const emoji = order.status === 'completed' ? '✅' : 
-                             order.status === 'awaiting_payment' ? '⏳' : 
+                const emoji = order.status === 'completed' ? '✅' :
+                             order.status === 'awaiting_payment' ? '⏳' :
                              order.status === 'expired' ? '⏰' : '❌';
                 text += `${emoji} Order #${order.order_id}\n`;
+                text += `   Product: ${escapeMarkdown(getOrderProductLabel(order))}\n`;
                 text += `   Qty: ${formatOrderQuantitySummary(order)}\n`;
                 text += `   Total: Rp ${formatIDR(order.total_price)}\n`;
                 if (order.coupon_code) {
@@ -10044,11 +10329,12 @@ else if (data.startsWith('claim_gift_')) {
             let text = '📝 *ALL ORDERS* (Last 15)\n\n';
             
             orders.forEach(order => {
-                const emoji = order.status === 'completed' ? '✅' : 
-                             order.status === 'awaiting_payment' ? '⏳' : 
+                const emoji = order.status === 'completed' ? '✅' :
+                             order.status === 'awaiting_payment' ? '⏳' :
                              order.status === 'expired' ? '⏰' : '❌';
-                
+
                 text += `${emoji} #${order.order_id} - @${escapeMarkdown(order.username)}\n`;
+                text += `   Product: ${escapeMarkdown(getOrderProductLabel(order))}\n`;
                 text += `   Qty: ${formatOrderQuantitySummary(order)} | Rp ${formatIDR(order.total_price)}\n`;
                 if (order.coupon_code) {
                     text += `   Coupon: ${order.coupon_code} (-${order.discount_percent}%)\n`;
@@ -10479,6 +10765,7 @@ bot.on('message', async (msg) => {
                 ).catch(() => {});
             }
         }
+
 // ===== GIFT MESSAGE CREATION =====
 else if (state.state === 'awaiting_gift_amount' && isAdmin(userId)) {
     const amount = parseInt(text.replace(/\D/g, ''));
@@ -13086,6 +13373,209 @@ else if (state.state === 'awaiting_gift_one_per_user' && isAdmin(userId)) {
 
                 bot.sendMessage(ADMIN_TELEGRAM_ID,
                     `📝 *NEW CANVA BUSINESS ORDER*\n\n` +
+                    `Order ID: #${orderId}\n` +
+                    `Customer: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')}\n` +
+                    `User ID: ${userId}\n` +
+                    `Quantity: ${quantity} account(s)\n` +
+                    `💰 Total: Rp ${formatIDR(totalPrice)}\n` +
+                    `Status: Awaiting Payment\n\n` +
+                    `💡 Waiting for payment proof...`,
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+            }
+
+            delete userStates[chatId];
+        }
+
+        else if (state.state === 'awaiting_proton_vpn_quantity') {
+            const quantity = parseInt(text.replace(/\D/g, ''));
+            const paymentMethod = state.payment_method || 'balance';
+            const protonStock = getProtonVpnStock();
+            const available = protonStock.accounts?.length || 0;
+            const maxQuantity = state.max_quantity || Math.max(1, Math.min(MAX_ORDER_QUANTITY, available));
+            const selectedQuantity = Math.min(quantity || 0, maxQuantity);
+
+            if (isNaN(quantity) || quantity < 1) {
+                bot.sendMessage(chatId, '❌ Please send a valid number!').catch(() => {});
+                return;
+            }
+
+            if (selectedQuantity !== quantity) {
+                bot.sendMessage(chatId, `⚠️ Maximum you can order now is ${maxQuantity} account(s).`).catch(() => {});
+                return;
+            }
+
+            if (quantity > available) {
+                bot.sendMessage(chatId, `❌ Only ${available} Proton VPN account(s) available right now!`).catch(() => {});
+                return;
+            }
+
+            const unitPrice = getProtonVpnPrice();
+            const totalPrice = quantity * unitPrice;
+            const users = getUsers();
+
+            if (paymentMethod === 'balance') {
+                const balance = getBalance(userId);
+
+                if (balance < totalPrice) {
+                    const shortfall = totalPrice - balance;
+
+                    const keyboard = {
+                        inline_keyboard: [
+                            [{ text: '💵 Top Up via QRIS', callback_data: 'topup_balance' }],
+                            [{ text: '🔙 Back', callback_data: 'buy_proton_vpn' }]
+                        ]
+                    };
+
+                    bot.sendMessage(chatId,
+                        `⚠️ Balance not enough.\n\n` +
+                        `Requested: ${quantity} Proton VPN account(s)\n` +
+                        `Total needed: Rp ${formatIDR(totalPrice)}\n` +
+                        `Current balance: Rp ${formatIDR(balance)}\n` +
+                        `Shortfall: Rp ${formatIDR(shortfall)}\n\n` +
+                        `Top up with QRIS then try again.`,
+                        { parse_mode: 'Markdown', reply_markup: keyboard }
+                    ).catch(() => {});
+                    return;
+                }
+
+                updateBalance(userId, -totalPrice);
+
+                const orderId = getNextOrderId();
+                const order = {
+                    order_id: orderId,
+                    user_id: userId,
+                    username: users[userId]?.username || msg.from.username || 'unknown',
+                    quantity: quantity,
+                    total_quantity: quantity,
+                    original_price: unitPrice,
+                    total_price: totalPrice,
+                    status: 'completed',
+                    payment_method: 'balance',
+                    date: new Date().toISOString(),
+                    completed_at: new Date().toISOString(),
+                    product: 'proton_vpn_14d_10u'
+                };
+
+                addOrder(order);
+
+                if (!users[userId]) {
+                    addUser(userId, msg.from);
+                }
+
+                const updatedUsers = getUsers();
+                updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+                updatedUsers[userId].completed_orders = (updatedUsers[userId].completed_orders || 0) + 1;
+                saveJSON(USERS_FILE, updatedUsers);
+
+                const delivery = await deliverProtonVpn(userId, orderId, quantity, unitPrice);
+                const newBalance = getBalance(userId);
+
+                if (delivery.success) {
+                    bot.sendMessage(
+                        chatId,
+                        `✅ *PROTON VPN PURCHASED!*\n\n` +
+                        `📋 Order: #${orderId}\n` +
+                        `🔢 Quantity: ${quantity}\n` +
+                        `💵 Paid: Rp ${formatIDR(totalPrice)}\n` +
+                        `💳 Balance left: Rp ${formatIDR(newBalance)}\n\n` +
+                        `🔑 Credentials sent above.`,
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '🔙 Main Menu', callback_data: 'back_to_main' }]
+                                ]
+                            }
+                        }
+                    ).catch(() => {});
+
+                    bot.sendMessage(ADMIN_TELEGRAM_ID,
+                        `🆕 *PROTON VPN SALE*\n\n` +
+                        `User: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')} (${userId})\n` +
+                        `Order: #${orderId}\n` +
+                        `Qty: ${quantity}\n` +
+                        `Total: Rp ${formatIDR(totalPrice)}\n` +
+                        `Remaining Proton VPN: ${(getProtonVpnStock().accounts || []).length}`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(() => {});
+                } else {
+                    updateBalance(userId, totalPrice);
+                    updateOrder(orderId, { status: 'failed' });
+
+                    bot.sendMessage(
+                        chatId,
+                        `❌ *DELIVERY FAILED*\n\n` +
+                        `Order: #${orderId}\n` +
+                        `Your payment has been refunded.\n\n` +
+                        `Please contact ${ADMIN_USERNAME} for help.`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(() => {});
+                }
+            } else {
+                const orderId = getNextOrderId();
+                const order = {
+                    order_id: orderId,
+                    user_id: userId,
+                    username: users[userId]?.username || state.user?.username || msg.from.username || 'unknown',
+                    quantity: quantity,
+                    total_quantity: quantity,
+                    original_price: unitPrice,
+                    total_price: totalPrice,
+                    status: 'awaiting_payment',
+                    payment_method: 'qris',
+                    date: new Date().toISOString(),
+                    product: 'proton_vpn_14d_10u'
+                };
+
+                addOrder(order);
+
+                if (!users[userId]) {
+                    addUser(userId, state.user || msg.from);
+                }
+
+                const updatedUsers = getUsers();
+                updatedUsers[userId].total_orders = (updatedUsers[userId].total_orders || 0) + 1;
+                saveJSON(USERS_FILE, updatedUsers);
+
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: '💳 Check Balance', callback_data: 'check_balance' }],
+                        [{ text: '📝 My Orders', callback_data: 'my_orders' }],
+                        [{ text: '🔙 Back', callback_data: 'back_to_main' }]
+                    ]
+                };
+
+                let orderMessage = `✅ *PROTON VPN ORDER CREATED!*\n\n` +
+                    `📋 Order ID: #${orderId}\n` +
+                    `🧑‍💻 Product: ${escapeMarkdown(getProductLabel('proton_vpn_14d_10u', 'Proton VPN 14d/10u'))}\n` +
+                    `🔢 Quantity: ${quantity}\n` +
+                    `💵 Total: Rp ${formatIDR(totalPrice)}\n` +
+                    `📌 Pay via QRIS and send proof with caption: #${orderId}.\n\n`;
+
+                const qrisData = getQrisData();
+                if (qrisData?.image_url) {
+                    orderMessage += `📸 QRIS: ${qrisData.image_url}\n`;
+                }
+
+                if (qrisData?.number) {
+                    orderMessage += `📱 Number: ${qrisData.number}\n`;
+                }
+
+                if (qrisData?.name) {
+                    orderMessage += `👤 Name: ${qrisData.name}\n`;
+                }
+
+                orderMessage += `\nAfter paying, send proof photo with caption: #${orderId}\n` +
+                    `or DM ${ADMIN_USERNAME} to confirm payment.`;
+
+                bot.sendMessage(chatId, orderMessage, {
+                    parse_mode: 'Markdown',
+                    reply_markup: keyboard
+                }).catch(() => {});
+
+                bot.sendMessage(ADMIN_TELEGRAM_ID,
+                    `📝 *NEW PROTON VPN ORDER*\n\n` +
                     `Order ID: #${orderId}\n` +
                     `Customer: @${escapeMarkdown(updatedUsers[userId]?.username || 'unknown')}\n` +
                     `User ID: ${userId}\n` +
