@@ -5930,6 +5930,28 @@ else if (data.startsWith('claim_gift_')) {
             ).catch(() => {});
         }
 
+        else if (data === 'admin_proton_vpn') {
+            if (!isAdmin(userId)) return;
+
+            const protonStock = getProtonVpnStock();
+            const available = protonStock.accounts?.length || 0;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '📤 Upload Proton VPN File', callback_data: 'upload_proton_vpn_instruction' }],
+                    [{ text: '📊 Check Proton VPN Stock', callback_data: 'check_proton_vpn_stock' }],
+                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
+                ]
+            };
+
+            bot.editMessageText(
+                `🛡️ *PROTON VPN STOCK*\\n\\n` +
+                `📦 Current Proton VPN accounts: ${available}\\n\\n` +
+                `Choose an option below:`,
+                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
+            ).catch(() => {});
+        }
+
         else if (data === 'upload_account_instruction') {
             if (!isAdmin(userId)) return;
 
@@ -10744,27 +10766,6 @@ bot.on('message', async (msg) => {
             }
         }
 
-        else if (data === 'admin_proton_vpn') {
-            if (!isAdmin(userId)) return;
-
-            const protonStock = getProtonVpnStock();
-            const available = protonStock.accounts?.length || 0;
-
-            const keyboard = {
-                inline_keyboard: [
-                    [{ text: '📤 Upload Proton VPN File', callback_data: 'upload_proton_vpn_instruction' }],
-                    [{ text: '📊 Check Proton VPN Stock', callback_data: 'check_proton_vpn_stock' }],
-                    [{ text: '🔙 Back', callback_data: 'back_to_admin_main' }]
-                ]
-            };
-
-            bot.editMessageText(
-                `🛡️ *PROTON VPN STOCK*\\n\\n` +
-                `📦 Current Proton VPN accounts: ${available}\\n\\n` +
-                `Choose an option below:`,
-                { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }
-            ).catch(() => {});
-        }
 // ===== GIFT MESSAGE CREATION =====
 else if (state.state === 'awaiting_gift_amount' && isAdmin(userId)) {
     const amount = parseInt(text.replace(/\D/g, ''));
