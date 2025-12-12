@@ -15,15 +15,19 @@ puppeteer.use(pluginStealth());
 const headless = 'new'; // HEADLESS MODE BARU
 const CONCURRENT_LIMIT = 1; // Eksekusi Serial
 
-// Konfigurasi dari ENV
-const password = process.env.CHATGPT_PASSWORD;
-const domain = process.env.EMAIL_SERVICE_DOMAIN;
-const apikey = process.env.EMAIL_SERVICE_API_KEY;
-const emailMode = (process.env.EMAIL_MODE || 'api').toLowerCase();
-const customDomains = (process.env.GENERATOR_CUSTOM_DOMAINS || '')
-    .split(',')
-    .map(d => d.trim())
-    .filter(Boolean);
+// Konfigurasi dari ENV (dapat diubah lewat prompt runtime)
+const defaultConfig = {
+    password: process.env.CHATGPT_PASSWORD || '',
+    domain: process.env.EMAIL_SERVICE_DOMAIN || '',
+    apiKey: process.env.EMAIL_SERVICE_API_KEY || '',
+    emailMode: (process.env.EMAIL_MODE || 'api').toLowerCase(),
+    customDomains: (process.env.GENERATOR_CUSTOM_DOMAINS || '')
+        .split(',')
+        .map(d => d.trim())
+        .filter(Boolean)
+};
+
+let config = { ...defaultConfig };
 
 // --- FUNGSI UTILITY (Tidak Berubah) ---
 
@@ -71,7 +75,7 @@ const saveToAccountsFile = (email, password) => {
 };
 
 const fetchVerificationCodeFromApi = async (userEmail) => {
-    const apiUrl = `${domain}/${userEmail}/${apikey}`;
+    const apiUrl = `${config.domain}/${userEmail}/${config.apiKey}`;
 
     const config = {
         headers: {
@@ -139,11 +143,11 @@ const generateGeneratorAutoEmail = async () => {
 };
 
 const generateGeneratorCustomEmail = () => {
-    if (!customDomains.length) {
+    if (!config.customDomains.length) {
         throw new Error('Mohon set GENERATOR_CUSTOM_DOMAINS untuk mode generator_custom');
     }
     const user = generateCleanUsername();
-    const domainChoice = customDomains[Math.floor(Math.random() * customDomains.length)];
+    const domainChoice = config.customDomains[Math.floor(Math.random() * config.customDomains.length)];
     const emailAddr = `${user}@${domainChoice}`;
     console.log(`🎯 Generator Custom Email: ${emailAddr}`);
     return emailAddr;
@@ -193,17 +197,17 @@ const fetchGeneratorOtp = async (emailAddress) => {
 };
 
 const generateEmail = async () => {
-    if (emailMode === 'generator_auto') {
+    if (config.emailMode === 'generator_auto') {
         return generateGeneratorAutoEmail();
     }
-    if (emailMode === 'generator_custom') {
+    if (config.emailMode === 'generator_custom') {
         return generateGeneratorCustomEmail();
     }
     return generateRandomEmail();
 };
 
 const fetchVerificationCode = async (userEmail) => {
-    if (emailMode === 'generator_auto' || emailMode === 'generator_custom') {
+    if (config.emailMode === 'generator_auto' || config.emailMode === 'generator_custom') {
         return fetchGeneratorOtp(userEmail);
     }
     return fetchVerificationCodeFromApi(userEmail);
@@ -221,6 +225,80 @@ function getUserInput(question) {
         resolve(answer);
     }));
 }
+
+const askQuestionWithDefault = (question, defaultValue = '') => {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+    });
+
+    return new Promise(resolve => {
+        rl.question(question, (answer) => {
+            rl.close();
+            const value = answer.trim();
+            resolve(value || defaultValue);
+        });
+    });
+};
+
+const promptConfiguration = async () => {
+    console.log('\n--- PENGATURAN EMAIL ---');
+
+    const passwordMask = config.password ? '****' : 'kosong';
+    const passwordPrompt = `🔒 Password ChatGPT (default: ${passwordMask}): `;
+    config.password = await askQuestionWithDefault(passwordPrompt, config.password);
+
+    if (!config.password) {
+        console.error('❌ ERROR FATAL: Password tidak boleh kosong.');
+        process.exit(1);
+    }
+
+    const modePrompt = `📧 Mode email [api/generator_auto/generator_custom] (default: ${config.emailMode}): `;
+    const chosenMode = (await askQuestionWithDefault(modePrompt, config.emailMode)).toLowerCase();
+    if (!['api', 'generator_auto', 'generator_custom'].includes(chosenMode)) {
+        console.error('❌ ERROR FATAL: Mode email tidak valid. Gunakan api/generator_auto/generator_custom.');
+        process.exit(1);
+    }
+    config.emailMode = chosenMode;
+
+    if (config.emailMode === 'api') {
+        const domainPrompt = `🌐 EMAIL_SERVICE_DOMAIN (default: ${config.domain || 'kosong'}): `;
+        config.domain = await askQuestionWithDefault(domainPrompt, config.domain);
+
+        const keyPrompt = `🔑 EMAIL_SERVICE_API_KEY (default: ${config.apiKey ? '****' : 'kosong'}): `;
+        config.apiKey = await askQuestionWithDefault(keyPrompt, config.apiKey);
+
+        if (!config.domain || !config.apiKey) {
+            console.error('❌ ERROR FATAL: EMAIL_SERVICE_DOMAIN dan EMAIL_SERVICE_API_KEY wajib diisi untuk mode api.');
+            process.exit(1);
+        }
+    }
+
+    if (config.emailMode === 'generator_custom') {
+        const defaultDomains = config.customDomains.join(', ');
+        const domainsPrompt = `🎯 GENERATOR_CUSTOM_DOMAINS pisahkan dengan koma (default: ${defaultDomains || 'kosong'}): `;
+        const domainInput = await askQuestionWithDefault(domainsPrompt, defaultDomains);
+        config.customDomains = domainInput
+            .split(',')
+            .map(d => d.trim())
+            .filter(Boolean);
+
+        if (!config.customDomains.length) {
+            console.error('❌ ERROR FATAL: Setidaknya satu domain harus diisi di GENERATOR_CUSTOM_DOMAINS.');
+            process.exit(1);
+        }
+    }
+
+    console.log('\n--- KONFIGURASI DIPAKAI ---');
+    console.log(`Mode Email: ${config.emailMode}`);
+    if (config.emailMode === 'api') {
+        console.log(`Domain API: ${config.domain}`);
+    }
+    if (config.emailMode === 'generator_custom') {
+        console.log(`Domain Custom: ${config.customDomains.join(', ')}`);
+    }
+    console.log('-------------------------\n');
+};
 
 // --- FUNGSI UTAMA OTOMASI PER AKUN ---
 async function runAutomation(accountIndex) {
@@ -282,7 +360,7 @@ async function runAutomation(accountIndex) {
         // --- STEP 2: Input Password ---
         console.log(`[STEP 2 Akun #${accountIndex}] Mengisi password.`);
         await page.waitForSelector('input[type="password"]', { timeout: 10000 });
-        await page.type('input[type="password"]', password, { delay: 50 });
+        await page.type('input[type="password"]', config.password, { delay: 50 });
         await page.evaluate(() => {
             const continueBtn = Array.from(document.querySelectorAll('button')).find(el => el.textContent.includes('Continue'));
             if (continueBtn) continueBtn.click();
@@ -339,7 +417,7 @@ async function runAutomation(accountIndex) {
             await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 }).catch(() => {});
 
             // --- SELESAI ---
-            saveToAccountsFile(email, password);
+            saveToAccountsFile(email, config.password);
             return true;
 
         } else {
@@ -362,20 +440,7 @@ async function runAutomation(accountIndex) {
 // --- FUNGSI UTAMA: LOOP PARALEL (Sekarang Serial karena CONCURRENT_LIMIT = 1) ---
 
 (async () => {
-    if (!password) {
-        console.error("❌ ERROR FATAL: Pastikan variabel CHATGPT_PASSWORD terisi di file .env");
-        process.exit(1);
-    }
-
-    if (emailMode === 'api' && (!domain || !apikey)) {
-        console.error("❌ ERROR FATAL: Pastikan EMAIL_SERVICE_DOMAIN dan EMAIL_SERVICE_API_KEY terisi untuk mode API");
-        process.exit(1);
-    }
-
-    if (emailMode === 'generator_custom' && !customDomains.length) {
-        console.error("❌ ERROR FATAL: Setidaknya satu domain harus diisi di GENERATOR_CUSTOM_DOMAINS untuk mode generator_custom");
-        process.exit(1);
-    }
+    await promptConfiguration();
     
     // 1. CETAK LOGO TERLEBIH DAHULU
     console.log(`\n██╗  ██╗ ██████╗███████╗      ██████╗ ███████╗██╗  ██╗`);
@@ -402,7 +467,7 @@ async function runAutomation(accountIndex) {
     console.log(`\n--- KONFIGURASI ---`);
     console.log(`Jumlah Akun: ${MAX_ACCOUNTS}`);
     console.log(`Konkurensi Paralel: ${CONCURRENT_LIMIT} (Serial)`);
-    console.log(`Mode Email: ${emailMode}`);
+    console.log(`Mode Email: ${config.emailMode}`);
     console.log(`-------------------\n`);
 
     for (let i = 1; i <= MAX_ACCOUNTS; i++) {
