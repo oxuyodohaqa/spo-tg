@@ -253,10 +253,25 @@ const promptConfiguration = async () => {
         process.exit(1);
     }
 
-    const modePrompt = `📧 Mode email [api/generator_auto/generator_custom] (default: ${config.emailMode}): `;
-    const chosenMode = (await askQuestionWithDefault(modePrompt, config.emailMode)).toLowerCase();
+    const modeOptions = {
+        '1': 'api',
+        '2': 'generator_auto',
+        '3': 'generator_custom',
+    };
+
+    const defaultModeNumber = Object.entries(modeOptions).find(([, mode]) => mode === config.emailMode)?.[0] || '1';
+    const modePrompt =
+        `📧 Pilih mode email:
+1) api
+2) generator_auto
+3) generator_custom
+Pilih [1/2/3] (default: ${defaultModeNumber} = ${config.emailMode}): `;
+
+    const rawMode = (await askQuestionWithDefault(modePrompt, defaultModeNumber)).toLowerCase();
+    const chosenMode = modeOptions[rawMode] || rawMode;
+
     if (!['api', 'generator_auto', 'generator_custom'].includes(chosenMode)) {
-        console.error('❌ ERROR FATAL: Mode email tidak valid. Gunakan api/generator_auto/generator_custom.');
+        console.error('❌ ERROR FATAL: Mode email tidak valid. Pilih 1/2/3 atau api/generator_auto/generator_custom.');
         process.exit(1);
     }
     config.emailMode = chosenMode;
