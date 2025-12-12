@@ -52,6 +52,18 @@ const generateCleanUsername = () => {
     return username;
 };
 
+const generateCleanUsername = () => {
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const pool = letters + numbers;
+    let username = '';
+    const length = Math.floor(Math.random() * 6) + 6; // 6-11 chars
+    for (let i = 0; i < length; i++) {
+        username += pool.charAt(Math.floor(Math.random() * pool.length));
+    }
+    return username;
+};
+
 const generateRandomName = () => {
     const firstNames = ['John', 'Jane', 'Michael', 'Emily', 'Robert', 'Jessica'];
     const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Miller'];
@@ -213,6 +225,99 @@ const fetchVerificationCode = async (userEmail) => {
     return fetchVerificationCodeFromApi(userEmail);
 };
 
+const captureDebugArtifacts = async (page, accountIndex, label) => {
+    if (!page) return;
+    try {
+        const safeLabel = label.replace(/[^a-z0-9_-]/gi, '_');
+        const screenshotPath = path.join(__dirname, `debug-${accountIndex}-${safeLabel}.png`);
+        const htmlPath = path.join(__dirname, `debug-${accountIndex}-${safeLabel}.html`);
+        await page.screenshot({ path: screenshotPath, fullPage: true });
+        const html = await page.content();
+        fs.writeFileSync(htmlPath, html, 'utf8');
+        console.log(`🖼️ Screenshot disimpan: ${screenshotPath}`);
+        console.log(`📝 HTML snapshot disimpan: ${htmlPath}`);
+    } catch (error) {
+        console.log(`⚠️ Gagal menyimpan artefak debug: ${error.message}`);
+    }
+};
+
+const waitForOtpInput = async (page, accountIndex) => {
+    const candidates = [
+        { type: 'css', selector: 'input[autocomplete="one-time-code"]' },
+        { type: 'css', selector: 'input[name="code"]' },
+        { type: 'css', selector: 'input[data-testid="verification-code-input"]' },
+        { type: 'css', selector: 'input[type="tel"]' },
+        { type: 'css', selector: 'input[type="text"]' },
+    ];
+
+    const groupedSelector = 'input[name^="code-"]';
+    const timeoutMs = 20000;
+    const deadline = Date.now() + timeoutMs;
+
+    // Coba deteksi input terpisah (6 digit di beberapa input)
+    try {
+        const groupedTimeout = deadline - Date.now();
+        if (groupedTimeout > 0) {
+            const groupedHandle = await page.waitForSelector(groupedSelector, { timeout: groupedTimeout, visible: true });
+            if (groupedHandle) {
+                const inputs = await page.$$(groupedSelector);
+                if (inputs.length > 1) {
+                    console.log(`[STEP 4 Akun #${accountIndex}] Selector OTP terpisah terdeteksi (${inputs.length} input).`);
+                    return inputs;
+                }
+            }
+        }
+    } catch (_) {
+        // abaikan dan lanjut ke kandidat lainnya
+    }
+
+    for (const candidate of candidates) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        try {
+            const handle = await page.waitForSelector(candidate.selector, { timeout: remaining, visible: true });
+            if (handle) {
+                console.log(`[STEP 4 Akun #${accountIndex}] Selector OTP dipakai: ${candidate.selector}`);
+                return handle;
+            }
+        } catch (_) {
+            continue;
+        }
+    }
+
+    throw new Error('Input OTP tidak ditemukan setelah mencoba beberapa selector.');
+};
+
+const waitForFullNameInput = async (page, accountIndex) => {
+    const candidates = [
+        { type: 'xpath', selector: `//div[.//div[contains(text(), 'Full name')]]//input` },
+        { type: 'css', selector: 'input[name="name"]' },
+        { type: 'css', selector: 'input#fullName' },
+        { type: 'css', selector: 'input[data-testid="name"]' },
+    ];
+
+    const timeoutMs = 20000;
+    const deadline = Date.now() + timeoutMs;
+    for (const candidate of candidates) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        try {
+            const handle = candidate.type === 'xpath'
+                ? await page.waitForXPath(candidate.selector, { timeout: remaining })
+                : await page.waitForSelector(candidate.selector, { timeout: remaining });
+            if (handle) {
+                if (candidate.type === 'css') {
+                    console.log(`[STEP 5 Akun #${accountIndex}] Selector fallback terpakai: ${candidate.selector}`);
+                }
+                return handle;
+            }
+        } catch (error) {
+            continue;
+        }
+    }
+    throw new Error('Input nama lengkap tidak ditemukan setelah menunggu beberapa selector.');
+};
+
 function getUserInput(question) {
     const rl = readline.createInterface({
         input: process.stdin,
@@ -225,6 +330,95 @@ function getUserInput(question) {
         resolve(answer);
     }));
 }
+
+const askQuestionWithDefault = (question, defaultValue = '') => {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+    });
+
+    return new Promise(resolve => {
+        rl.question(question, (answer) => {
+            rl.close();
+            const value = answer.trim();
+            resolve(value || defaultValue);
+        });
+    });
+};
+
+const promptConfiguration = async () => {
+    console.log('\n--- PENGATURAN EMAIL ---');
+
+    const passwordMask = config.password ? '****' : 'kosong';
+    const passwordPrompt = `🔒 Password ChatGPT (default: ${passwordMask}): `;
+    config.password = await askQuestionWithDefault(passwordPrompt, config.password);
+
+    if (!config.password) {
+        console.error('❌ ERROR FATAL: Password tidak boleh kosong.');
+        process.exit(1);
+    }
+
+    const modeOptions = {
+        '1': 'api',
+        '2': 'generator_auto',
+        '3': 'generator_custom',
+    };
+
+    const defaultModeNumber = Object.entries(modeOptions).find(([, mode]) => mode === config.emailMode)?.[0] || '1';
+    const modePrompt =
+        `📧 Pilih mode email:
+1) api
+2) generator_auto
+3) generator_custom
+Pilih [1/2/3] (default: ${defaultModeNumber} = ${config.emailMode}): `;
+
+    const rawMode = (await askQuestionWithDefault(modePrompt, defaultModeNumber)).toLowerCase();
+    const chosenMode = modeOptions[rawMode] || rawMode;
+
+    if (!['api', 'generator_auto', 'generator_custom'].includes(chosenMode)) {
+        console.error('❌ ERROR FATAL: Mode email tidak valid. Pilih 1/2/3 atau api/generator_auto/generator_custom.');
+        process.exit(1);
+    }
+    config.emailMode = chosenMode;
+
+    if (config.emailMode === 'api') {
+        const domainPrompt = `🌐 EMAIL_SERVICE_DOMAIN (default: ${config.domain || 'kosong'}): `;
+        config.domain = await askQuestionWithDefault(domainPrompt, config.domain);
+
+        const keyPrompt = `🔑 EMAIL_SERVICE_API_KEY (default: ${config.apiKey ? '****' : 'kosong'}): `;
+        config.apiKey = await askQuestionWithDefault(keyPrompt, config.apiKey);
+
+        if (!config.domain || !config.apiKey) {
+            console.error('❌ ERROR FATAL: EMAIL_SERVICE_DOMAIN dan EMAIL_SERVICE_API_KEY wajib diisi untuk mode api.');
+            process.exit(1);
+        }
+    }
+
+    if (config.emailMode === 'generator_custom') {
+        const defaultDomains = config.customDomains.join(', ');
+        const domainsPrompt = `🎯 GENERATOR_CUSTOM_DOMAINS pisahkan dengan koma (default: ${defaultDomains || 'kosong'}): `;
+        const domainInput = await askQuestionWithDefault(domainsPrompt, defaultDomains);
+        config.customDomains = domainInput
+            .split(',')
+            .map(d => d.trim())
+            .filter(Boolean);
+
+        if (!config.customDomains.length) {
+            console.error('❌ ERROR FATAL: Setidaknya satu domain harus diisi di GENERATOR_CUSTOM_DOMAINS.');
+            process.exit(1);
+        }
+    }
+
+    console.log('\n--- KONFIGURASI DIPAKAI ---');
+    console.log(`Mode Email: ${config.emailMode}`);
+    if (config.emailMode === 'api') {
+        console.log(`Domain API: ${config.domain}`);
+    }
+    if (config.emailMode === 'generator_custom') {
+        console.log(`Domain Custom: ${config.customDomains.join(', ')}`);
+    }
+    console.log('-------------------------\n');
+};
 
 const askQuestionWithDefault = (question, defaultValue = '') => {
     const rl = readline.createInterface({
@@ -394,23 +588,44 @@ async function runAutomation(accountIndex) {
 
         if (verificationCode) {
             console.log(`[STEP 3 Akun #${accountIndex}] ✅ Kode didapatkan: ${verificationCode}`);
-            
+
             // --- STEP 4: Input Kode Verifikasi & Continue ---
-            const codeInputSelector = 'input[type="text"]'; 
-            console.log('[STEP 4 Akun #${accountIndex}] Mengisi kode dan klik "Continue".');
-            await page.waitForSelector(codeInputSelector, { timeout: 10000 }); 
-            await page.type(codeInputSelector, verificationCode, { delay: 100 });
+            console.log(`[STEP 4 Akun #${accountIndex}] Mengisi kode dan klik "Continue".`);
+            let otpTarget;
+            try {
+                otpTarget = await waitForOtpInput(page, accountIndex);
+            } catch (error) {
+                await captureDebugArtifacts(page, accountIndex, 'otp-missing');
+                throw error;
+            }
+
+            if (Array.isArray(otpTarget)) {
+                const digits = verificationCode.split('');
+                for (let i = 0; i < otpTarget.length && i < digits.length; i++) {
+                    await otpTarget[i].click({ clickCount: 3 });
+                    await otpTarget[i].press('Backspace');
+                    await otpTarget[i].type(digits[i], { delay: 50 });
+                }
+            } else {
+                await otpTarget.click({ clickCount: 3 });
+                await otpTarget.type(verificationCode, { delay: 100 });
+            }
+
             await page.click('button[data-dd-action-name="Continue"]');
             await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 }).catch(() => {});
             await new Promise(resolve => setTimeout(resolve, 3000));
 
 
             // --- STEP 5: Input Full Name (SELECTOR DIPERBAIKI) ---
-            
-            const fullNameInputXPath = `//div[.//div[contains(text(), 'Full name')]]//input`;
             console.log(`[STEP 5 Akun #${accountIndex}] Mengisi Nama Lengkap: ${fullName}`);
-            const fullNameInput = await page.waitForXPath(fullNameInputXPath, { timeout: 10000 });
-            await fullNameInput.evaluate(el => el.value = ''); 
+            let fullNameInput;
+            try {
+                fullNameInput = await waitForFullNameInput(page, accountIndex);
+            } catch (error) {
+                await captureDebugArtifacts(page, accountIndex, 'full-name-missing');
+                throw error;
+            }
+            await fullNameInput.evaluate(el => el.value = '');
             await fullNameInput.type(fullName, { delay: 50 });
 
 
@@ -443,10 +658,11 @@ async function runAutomation(accountIndex) {
 
     } catch (error) {
         console.error(`[FATAL Akun #${accountIndex}] ERROR: Otomasi Terhenti secara mendadak: ${error.message}`);
+        await captureDebugArtifacts(page, accountIndex, 'error');
         return false;
     } finally {
          if (browser) {
-            await browser.close(); 
+            await browser.close();
         }
     }
 }
