@@ -356,6 +356,12 @@ async function runAutomation(accountIndex, generateEmail) {
             : generateGeneratorAutoEmail(generatorDomains);
     };
 
+    const generateEmail = () => {
+        return emailMode === 'custom'
+            ? generateGeneratorCustomEmail(customDomain)
+            : generateGeneratorAutoEmail(generatorDomains);
+    };
+
     for (let i = 1; i <= MAX_ACCOUNTS; i++) {
         accountTasks.push(
             queue.add(async () => {
