@@ -52,6 +52,30 @@ const generateCleanUsername = () => {
     return username;
 };
 
+const generateCleanUsername = () => {
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const pool = letters + numbers;
+    let username = '';
+    const length = Math.floor(Math.random() * 6) + 6; // 6-11 chars
+    for (let i = 0; i < length; i++) {
+        username += pool.charAt(Math.floor(Math.random() * pool.length));
+    }
+    return username;
+};
+
+const generateCleanUsername = () => {
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const pool = letters + numbers;
+    let username = '';
+    const length = Math.floor(Math.random() * 6) + 6; // 6-11 chars
+    for (let i = 0; i < length; i++) {
+        username += pool.charAt(Math.floor(Math.random() * pool.length));
+    }
+    return username;
+};
+
 const generateRandomName = () => {
     const firstNames = ['John', 'Jane', 'Michael', 'Emily', 'Robert', 'Jessica'];
     const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Miller'];
@@ -325,6 +349,184 @@ function getUserInput(question) {
         resolve(answer);
     }));
 }
+
+const askQuestionWithDefault = (question, defaultValue = '') => {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+    });
+
+    return new Promise(resolve => {
+        rl.question(question, (answer) => {
+            rl.close();
+            const value = answer.trim();
+            resolve(value || defaultValue);
+        });
+    });
+};
+
+const promptConfiguration = async () => {
+    console.log('\n--- PENGATURAN EMAIL ---');
+
+    const passwordMask = config.password ? '****' : 'kosong';
+    const passwordPrompt = `🔒 Password ChatGPT (default: ${passwordMask}): `;
+    config.password = await askQuestionWithDefault(passwordPrompt, config.password);
+
+    if (!config.password) {
+        console.error('❌ ERROR FATAL: Password tidak boleh kosong.');
+        process.exit(1);
+    }
+
+    const modeOptions = {
+        '1': 'api',
+        '2': 'generator_auto',
+        '3': 'generator_custom',
+    };
+
+    const defaultModeNumber = Object.entries(modeOptions).find(([, mode]) => mode === config.emailMode)?.[0] || '1';
+    const modePrompt =
+        `📧 Pilih mode email:
+1) api
+2) generator_auto
+3) generator_custom
+Pilih [1/2/3] (default: ${defaultModeNumber} = ${config.emailMode}): `;
+
+    const rawMode = (await askQuestionWithDefault(modePrompt, defaultModeNumber)).toLowerCase();
+    const chosenMode = modeOptions[rawMode] || rawMode;
+
+    if (!['api', 'generator_auto', 'generator_custom'].includes(chosenMode)) {
+        console.error('❌ ERROR FATAL: Mode email tidak valid. Pilih 1/2/3 atau api/generator_auto/generator_custom.');
+        process.exit(1);
+    }
+    config.emailMode = chosenMode;
+
+    if (config.emailMode === 'api') {
+        const domainPrompt = `🌐 EMAIL_SERVICE_DOMAIN (default: ${config.domain || 'kosong'}): `;
+        config.domain = await askQuestionWithDefault(domainPrompt, config.domain);
+
+        const keyPrompt = `🔑 EMAIL_SERVICE_API_KEY (default: ${config.apiKey ? '****' : 'kosong'}): `;
+        config.apiKey = await askQuestionWithDefault(keyPrompt, config.apiKey);
+
+        if (!config.domain || !config.apiKey) {
+            console.error('❌ ERROR FATAL: EMAIL_SERVICE_DOMAIN dan EMAIL_SERVICE_API_KEY wajib diisi untuk mode api.');
+            process.exit(1);
+        }
+    }
+
+    if (config.emailMode === 'generator_custom') {
+        const defaultDomains = config.customDomains.join(', ');
+        const domainsPrompt = `🎯 GENERATOR_CUSTOM_DOMAINS pisahkan dengan koma (default: ${defaultDomains || 'kosong'}): `;
+        const domainInput = await askQuestionWithDefault(domainsPrompt, defaultDomains);
+        config.customDomains = domainInput
+            .split(',')
+            .map(d => d.trim())
+            .filter(Boolean);
+
+        if (!config.customDomains.length) {
+            console.error('❌ ERROR FATAL: Setidaknya satu domain harus diisi di GENERATOR_CUSTOM_DOMAINS.');
+            process.exit(1);
+        }
+    }
+
+    console.log('\n--- KONFIGURASI DIPAKAI ---');
+    console.log(`Mode Email: ${config.emailMode}`);
+    if (config.emailMode === 'api') {
+        console.log(`Domain API: ${config.domain}`);
+    }
+    if (config.emailMode === 'generator_custom') {
+        console.log(`Domain Custom: ${config.customDomains.join(', ')}`);
+    }
+    console.log('-------------------------\n');
+};
+
+const askQuestionWithDefault = (question, defaultValue = '') => {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+    });
+
+    return new Promise(resolve => {
+        rl.question(question, (answer) => {
+            rl.close();
+            const value = answer.trim();
+            resolve(value || defaultValue);
+        });
+    });
+};
+
+const promptConfiguration = async () => {
+    console.log('\n--- PENGATURAN EMAIL ---');
+
+    const passwordMask = config.password ? '****' : 'kosong';
+    const passwordPrompt = `🔒 Password ChatGPT (default: ${passwordMask}): `;
+    config.password = await askQuestionWithDefault(passwordPrompt, config.password);
+
+    if (!config.password) {
+        console.error('❌ ERROR FATAL: Password tidak boleh kosong.');
+        process.exit(1);
+    }
+
+    const modeOptions = {
+        '1': 'api',
+        '2': 'generator_auto',
+        '3': 'generator_custom',
+    };
+
+    const defaultModeNumber = Object.entries(modeOptions).find(([, mode]) => mode === config.emailMode)?.[0] || '1';
+    const modePrompt =
+        `📧 Pilih mode email:
+1) api
+2) generator_auto
+3) generator_custom
+Pilih [1/2/3] (default: ${defaultModeNumber} = ${config.emailMode}): `;
+
+    const rawMode = (await askQuestionWithDefault(modePrompt, defaultModeNumber)).toLowerCase();
+    const chosenMode = modeOptions[rawMode] || rawMode;
+
+    if (!['api', 'generator_auto', 'generator_custom'].includes(chosenMode)) {
+        console.error('❌ ERROR FATAL: Mode email tidak valid. Pilih 1/2/3 atau api/generator_auto/generator_custom.');
+        process.exit(1);
+    }
+    config.emailMode = chosenMode;
+
+    if (config.emailMode === 'api') {
+        const domainPrompt = `🌐 EMAIL_SERVICE_DOMAIN (default: ${config.domain || 'kosong'}): `;
+        config.domain = await askQuestionWithDefault(domainPrompt, config.domain);
+
+        const keyPrompt = `🔑 EMAIL_SERVICE_API_KEY (default: ${config.apiKey ? '****' : 'kosong'}): `;
+        config.apiKey = await askQuestionWithDefault(keyPrompt, config.apiKey);
+
+        if (!config.domain || !config.apiKey) {
+            console.error('❌ ERROR FATAL: EMAIL_SERVICE_DOMAIN dan EMAIL_SERVICE_API_KEY wajib diisi untuk mode api.');
+            process.exit(1);
+        }
+    }
+
+    if (config.emailMode === 'generator_custom') {
+        const defaultDomains = config.customDomains.join(', ');
+        const domainsPrompt = `🎯 GENERATOR_CUSTOM_DOMAINS pisahkan dengan koma (default: ${defaultDomains || 'kosong'}): `;
+        const domainInput = await askQuestionWithDefault(domainsPrompt, defaultDomains);
+        config.customDomains = domainInput
+            .split(',')
+            .map(d => d.trim())
+            .filter(Boolean);
+
+        if (!config.customDomains.length) {
+            console.error('❌ ERROR FATAL: Setidaknya satu domain harus diisi di GENERATOR_CUSTOM_DOMAINS.');
+            process.exit(1);
+        }
+    }
+
+    console.log('\n--- KONFIGURASI DIPAKAI ---');
+    console.log(`Mode Email: ${config.emailMode}`);
+    if (config.emailMode === 'api') {
+        console.log(`Domain API: ${config.domain}`);
+    }
+    if (config.emailMode === 'generator_custom') {
+        console.log(`Domain Custom: ${config.customDomains.join(', ')}`);
+    }
+    console.log('-------------------------\n');
+};
 
 const askQuestionWithDefault = (question, defaultValue = '') => {
     const rl = readline.createInterface({
