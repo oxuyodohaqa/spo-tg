@@ -54,42 +54,6 @@ const generateCleanUsername = () => {
     return username;
 };
 
-const generateCleanUsername = () => {
-    const letters = 'abcdefghijklmnopqrstuvwxyz';
-    const numbers = '0123456789';
-    const pool = letters + numbers;
-    let username = '';
-    const length = Math.floor(Math.random() * 6) + 6; // 6-11 chars
-    for (let i = 0; i < length; i++) {
-        username += pool.charAt(Math.floor(Math.random() * pool.length));
-    }
-    return username;
-};
-
-const generateCleanUsername = () => {
-    const letters = 'abcdefghijklmnopqrstuvwxyz';
-    const numbers = '0123456789';
-    const pool = letters + numbers;
-    let username = '';
-    const length = Math.floor(Math.random() * 6) + 6; // 6-11 chars
-    for (let i = 0; i < length; i++) {
-        username += pool.charAt(Math.floor(Math.random() * pool.length));
-    }
-    return username;
-};
-
-const generateCleanUsername = () => {
-    const letters = 'abcdefghijklmnopqrstuvwxyz';
-    const numbers = '0123456789';
-    const pool = letters + numbers;
-    let username = '';
-    const length = Math.floor(Math.random() * 6) + 6; // 6-11 chars
-    for (let i = 0; i < length; i++) {
-        username += pool.charAt(Math.floor(Math.random() * pool.length));
-    }
-    return username;
-};
-
 const generateRandomName = () => {
     const firstNames = ['John', 'Jane', 'Michael', 'Emily', 'Robert', 'Jessica'];
     const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Miller'];
@@ -265,60 +229,6 @@ const captureDebugArtifacts = async (page, accountIndex, label) => {
     } catch (error) {
         console.log(`⚠️ Gagal menyimpan artefak debug: ${error.message}`);
     }
-};
-
-const waitForOtpInput = async (page, accountIndex) => {
-    const singleFieldSelectors = [
-        'input[type="text"]',
-        'input[type="tel"]',
-        'input[name="code"]',
-        'input[data-testid="verification-code-input"]',
-    ];
-
-    const groupedSelector = 'input[name^="code-"]';
-    const timeoutMs = 15000;
-    const deadline = Date.now() + timeoutMs;
-
-    const trySelectors = async (frame, remaining) => {
-        // Cari input terpisah (6 digit di beberapa input)
-        try {
-            const groupedHandle = await frame.waitForSelector(groupedSelector, { timeout: remaining, visible: true });
-            if (groupedHandle) {
-                const inputs = await frame.$$(groupedSelector);
-                if (inputs.length > 1) {
-                    console.log(`[STEP 4 Akun #${accountIndex}] OTP multi-field terdeteksi (${inputs.length} input).`);
-                    return inputs;
-                }
-            }
-        } catch (_) {
-            // lanjut ke selector lain
-        }
-
-        for (const selector of singleFieldSelectors) {
-            try {
-                const handle = await frame.waitForSelector(selector, { timeout: remaining, visible: true });
-                if (handle) {
-                    console.log(`[STEP 4 Akun #${accountIndex}] Selector OTP dipakai: ${selector}`);
-                    return handle;
-                }
-            } catch (_) {
-                continue;
-            }
-        }
-
-        return null;
-    };
-
-    while (Date.now() < deadline) {
-        const remaining = deadline - Date.now();
-        const frames = page.frames();
-        for (const frame of frames) {
-            const found = await trySelectors(frame, remaining);
-            if (found) return found;
-        }
-    }
-
-    throw new Error('Input OTP tidak ditemukan setelah mencoba selector bawaan.');
 };
 
 const waitForFullNameInput = async (page, accountIndex) => {
@@ -789,24 +699,17 @@ async function runAutomation(accountIndex) {
 
             // --- STEP 4: Input Kode Verifikasi & Continue ---
             console.log(`[STEP 4 Akun #${accountIndex}] Mengisi kode dan klik "Continue".`);
-            let otpTarget;
+            const codeInputSelector = 'input[type="text"]';
+
             try {
-                otpTarget = await waitForOtpInput(page, accountIndex);
+                await page.waitForSelector(codeInputSelector, { timeout: 10000 });
             } catch (error) {
                 await captureDebugArtifacts(page, accountIndex, 'otp-missing');
                 throw error;
             }
 
-            if (Array.isArray(otpTarget)) {
-                const digits = verificationCode.split('');
-                for (let i = 0; i < Math.min(otpTarget.length, digits.length); i++) {
-                    await otpTarget[i].click({ clickCount: 2 });
-                    await otpTarget[i].type(digits[i], { delay: 100 });
-                }
-            } else {
-                await otpTarget.click({ clickCount: 3 });
-                await otpTarget.type(verificationCode, { delay: 100 });
-            }
+            await page.click(codeInputSelector, { clickCount: 3 });
+            await page.type(codeInputSelector, verificationCode, { delay: 100 });
 
             await page.click('button[data-dd-action-name="Continue"]');
             await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 }).catch(() => {});
