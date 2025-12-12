@@ -40,6 +40,20 @@ const generateRandomEmail = () => {
     return `${username}@wzieemail.my.id`;
 };
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const generateCleanUsername = () => {
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const pool = letters + numbers;
+    let username = '';
+    const length = Math.floor(Math.random() * 6) + 6; // 6-11 chars
+    for (let i = 0; i < length; i++) {
+        username += pool.charAt(Math.floor(Math.random() * pool.length));
+    }
+    return username;
+};
+
 const generateCleanUsername = () => {
     const letters = 'abcdefghijklmnopqrstuvwxyz';
     const numbers = '0123456789';
@@ -214,7 +228,7 @@ const fetchGeneratorOtp = async (emailAddress) => {
         } catch (error) {
             console.log('⚠️ Gagal mengambil inbox generator.email, mencoba lagi...');
         }
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await delay(3000);
     }
     console.error('❌ Timeout membaca OTP dari generator.email');
     return null;
@@ -337,18 +351,94 @@ const waitForFullNameInput = async (page, accountIndex) => {
     throw new Error('Input nama lengkap tidak ditemukan setelah menunggu beberapa selector.');
 };
 
-function getUserInput(question) {
+const askQuestionWithDefault = (question, defaultValue = '') => {
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
     });
-    // Menambahkan console.log kosong untuk membersihkan output setelah logo dicetak
-    process.stdout.write('\n'); 
-    return new Promise(resolve => rl.question(question, answer => {
-        rl.close();
-        resolve(answer);
-    }));
-}
+
+    return new Promise(resolve => {
+        rl.question(question, (answer) => {
+            rl.close();
+            const value = answer.trim();
+            resolve(value || defaultValue);
+        });
+    });
+};
+
+const promptConfiguration = async () => {
+    console.log('\n--- PENGATURAN EMAIL ---');
+
+    const passwordMask = config.password ? '****' : 'kosong';
+    const passwordPrompt = `🔒 Password ChatGPT (default: ${passwordMask}): `;
+    config.password = await askQuestionWithDefault(passwordPrompt, config.password);
+
+    if (!config.password) {
+        console.error('❌ ERROR FATAL: Password tidak boleh kosong.');
+        process.exit(1);
+    }
+
+    const modeOptions = {
+        '1': 'api',
+        '2': 'generator_auto',
+        '3': 'generator_custom',
+    };
+
+    const defaultModeNumber = Object.entries(modeOptions).find(([, mode]) => mode === config.emailMode)?.[0] || '1';
+    const modePrompt =
+        `📧 Pilih mode email:
+1) api
+2) generator_auto
+3) generator_custom
+Pilih [1/2/3] (default: ${defaultModeNumber} = ${config.emailMode}): `;
+
+    const rawMode = (await askQuestionWithDefault(modePrompt, defaultModeNumber)).toLowerCase();
+    const chosenMode = modeOptions[rawMode] || rawMode;
+
+    if (!['api', 'generator_auto', 'generator_custom'].includes(chosenMode)) {
+        console.error('❌ ERROR FATAL: Mode email tidak valid. Pilih 1/2/3 atau api/generator_auto/generator_custom.');
+        process.exit(1);
+    }
+    config.emailMode = chosenMode;
+
+    if (config.emailMode === 'api') {
+        const domainPrompt = `🌐 EMAIL_SERVICE_DOMAIN (default: ${config.domain || 'kosong'}): `;
+        config.domain = await askQuestionWithDefault(domainPrompt, config.domain);
+
+        const keyPrompt = `🔑 EMAIL_SERVICE_API_KEY (default: ${config.apiKey ? '****' : 'kosong'}): `;
+        config.apiKey = await askQuestionWithDefault(keyPrompt, config.apiKey);
+
+        if (!config.domain || !config.apiKey) {
+            console.error('❌ ERROR FATAL: EMAIL_SERVICE_DOMAIN dan EMAIL_SERVICE_API_KEY wajib diisi untuk mode api.');
+            process.exit(1);
+        }
+    }
+
+    if (config.emailMode === 'generator_custom') {
+        const defaultDomains = config.customDomains.join(', ');
+        const domainsPrompt = `🎯 GENERATOR_CUSTOM_DOMAINS pisahkan dengan koma (default: ${defaultDomains || 'kosong'}): `;
+        const domainInput = await askQuestionWithDefault(domainsPrompt, defaultDomains);
+        config.customDomains = domainInput
+            .split(',')
+            .map(d => d.trim())
+            .filter(Boolean);
+
+        if (!config.customDomains.length) {
+            console.error('❌ ERROR FATAL: Setidaknya satu domain harus diisi di GENERATOR_CUSTOM_DOMAINS.');
+            process.exit(1);
+        }
+    }
+
+    console.log('\n--- KONFIGURASI DIPAKAI ---');
+    console.log(`Mode Email: ${config.emailMode}`);
+    if (config.emailMode === 'api') {
+        console.log(`Domain API: ${config.domain}`);
+    }
+    if (config.emailMode === 'generator_custom') {
+        console.log(`Domain Custom: ${config.customDomains.join(', ')}`);
+    }
+    console.log('-------------------------\n');
+};
 
 const askQuestionWithDefault = (question, defaultValue = '') => {
     const rl = readline.createInterface({
@@ -672,7 +762,7 @@ async function runAutomation(accountIndex) {
             const continueBtn = Array.from(document.querySelectorAll('button[type="submit"]')).find(el => el.textContent.includes('Continue'));
             if (continueBtn) continueBtn.click();
         });
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await delay(2000);
         
         // --- STEP 2: Input Password ---
         console.log(`[STEP 2 Akun #${accountIndex}] Mengisi password.`);
@@ -682,14 +772,14 @@ async function runAutomation(accountIndex) {
             const continueBtn = Array.from(document.querySelectorAll('button')).find(el => el.textContent.includes('Continue'));
             if (continueBtn) continueBtn.click();
         });
-        
+
         await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 15000 }).catch(() => {});
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await delay(3000);
 
         // --- STEP 3: Fetch Kode Verifikasi (Delay 7 detik) ---
         
         console.log(`[STEP 3 Akun #${accountIndex}] ⏱️ Menunggu 7 detik untuk email masuk...`);
-        await new Promise(resolve => setTimeout(resolve, 7000)); 
+        await delay(7000);
         
         console.log(`[STEP 3 Akun #${accountIndex}] Memanggil API untuk mendapatkan kode...`);
         const verificationCode = await fetchVerificationCode(email);
@@ -720,7 +810,7 @@ async function runAutomation(accountIndex) {
 
             await page.click('button[data-dd-action-name="Continue"]');
             await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 }).catch(() => {});
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            await delay(3000);
 
 
             // --- STEP 5: Input Full Name (SELECTOR DIPERBAIKI) ---
@@ -790,7 +880,7 @@ async function runAutomation(accountIndex) {
     console.log(`=============================================================`);
     
     // 2. Tanyakan jumlah akun yang ingin dibuat
-    const maxAccountsStr = await getUserInput(`Masukkan jumlah akun yang ingin dibuat (Contoh: 5): `);
+    const maxAccountsStr = await askQuestionWithDefault(`Masukkan jumlah akun yang ingin dibuat (Contoh: 5): `);
     const MAX_ACCOUNTS = parseInt(maxAccountsStr);
 
     if (isNaN(MAX_ACCOUNTS) || MAX_ACCOUNTS <= 0) {
@@ -818,9 +908,9 @@ async function runAutomation(accountIndex) {
                     console.error(`[FATAL ERROR AKUN #${i}] Gagal saat eksekusi: ${error.message}`);
                 }
 
-                const randomDelay = Math.floor(Math.random() * (10000 - 5000 + 1)) + 5000; 
+                const randomDelay = Math.floor(Math.random() * (10000 - 5000 + 1)) + 5000;
                 console.log(`\n[JEDA 💤 Slot #${i}] Menunggu ${randomDelay / 1000} detik sebelum slot berikutnya siap.`);
-                await new Promise(resolve => setTimeout(resolve, randomDelay));
+                await delay(randomDelay);
                 
                 return success;
             })
