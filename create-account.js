@@ -16,47 +16,19 @@ const headless = 'new'; // HEADLESS MODE BARU
 const CONCURRENT_LIMIT = 1; // Eksekusi Serial
 
 // Konfigurasi dari ENV
-const password = process.env.CHATGPT_PASSWORD;
+const password = process.env.CHATGPT_PASSWORD; 
+const domain = process.env.EMAIL_SERVICE_DOMAIN; 
+const apikey = process.env.EMAIL_SERVICE_API_KEY; 
 
 // --- FUNGSI UTILITY (Tidak Berubah) ---
 
-const fetchCapcutDomains = async () => {
-    try {
-        const response = await axios.get('https://generator.email/');
-        const match = response.data.match(/class="e7m tt-suggestions".*?<\/div>/s);
-
-        if (!match) return [];
-
-        const domainMatches = [...match[0].matchAll(/<p[^>]*>([^<]+)<\/p>/g)].map((m) => m[1].trim());
-        return Array.from(new Set(domainMatches.filter((d) => d.includes('.'))));
-    } catch (error) {
-        console.error('❌ Gagal mengambil domain generator.email:', error.message);
-        return [];
-    }
-};
-
-const generateCleanUsername = () => {
+const generateRandomEmail = () => {
     const letters = 'abcdefghijklmnopqrstuvwxyz';
-    const randomLength = Math.floor(Math.random() * 5) + 6; // 6-10 huruf
     let username = '';
-    for (let i = 0; i < randomLength; i++) {
+    for (let i = 0; i < 6; i++) {
         username += letters.charAt(Math.floor(Math.random() * letters.length));
     }
-    return username;
-};
-
-const generateGeneratorAutoEmail = (domains) => {
-    if (!domains || domains.length === 0) {
-        throw new Error('Domain generator.email tidak tersedia');
-    }
-    const user = generateCleanUsername();
-    const domain = domains[Math.floor(Math.random() * domains.length)];
-    return `${user}@${domain}`;
-};
-
-const generateGeneratorCustomEmail = (customDomain) => {
-    const user = generateCleanUsername();
-    return `${user}@${customDomain}`;
+    return `${username}@wzieemail.my.id`;
 };
 
 const generateRandomName = () => {
@@ -81,60 +53,43 @@ const saveToAccountsFile = (email, password) => {
     console.log(`✅ Kredensial akun disimpan di accounts.txt`);
 };
 
-const extractVerificationCode = (html) => {
-    if (!html) return null;
+const fetchVerificationCode = async (userEmail) => {
+    const apiUrl = `${domain}/${userEmail}/${apikey}`;
 
-    const patterns = [
-        /<p[^>]*font-size:\s*24px[^>]*>[\s\n]*(\d{6})[\s\n]*<\/p>/i,
-        /Your ChatGPT code is (\d{6})/i,
-        /<title>.*?(\d{6}).*?<\/title>/i,
-        /verification code[:\s]*(\d{6})/i,
-        /code[:\s]*(\d{6})/i,
-        /\b(\d{6})\b/
-    ];
+    const config = {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            'Accept': 'application/json' 
+        },
+        timeout: 15000 
+    };
+    
+    try {
+        const response = await axios.get(apiUrl, config); 
+        
+        if (response.status === 200 && Array.isArray(response.data) && response.data.length > 0) {
+            
+            const latestEmail = response.data[0];
+            const emailSubject = latestEmail.subject;
+            const regex = /\d{6}/;
+            const match = emailSubject.match(regex);
 
-    for (const pattern of patterns) {
-        const match = html.match(pattern);
-        if (match) return match[1];
-    }
-
-    return null;
-};
-
-const fetchVerificationCode = async (userEmail, maxWaitMs = 120000) => {
-    const [localPart, emailDomain] = userEmail.split('@');
-
-    if (!localPart || !emailDomain) {
-        console.error('❌ Email tidak valid untuk mengambil kode verifikasi.');
+            if (match && match.length > 0) {
+                const realCode = match[0]; 
+                return realCode;
+            } else {
+                return '999999'; 
+            }
+        } else {
+            return null; 
+        }
+        
+    } catch (error) {
+        if (error.response && error.response.status >= 400) {
+            return '111111'; 
+        }
         return null;
     }
-
-    const inboxUrl = `https://generator.email/${emailDomain}/${localPart}/`;
-    const startedAt = Date.now();
-
-    while (Date.now() - startedAt < maxWaitMs) {
-        try {
-            const response = await axios.get(inboxUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
-                },
-                timeout: 15000
-            });
-
-            const code = extractVerificationCode(response.data);
-            if (code) {
-                return code;
-            }
-        } catch (error) {
-            console.error(`⚠️ Retry ambil kode generator.email (status: ${error.response?.status || error.message})`);
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 3000));
-    }
-
-    console.error('❌ Timeout menunggu kode verifikasi dari generator.email');
-    return null;
 };
 
 function getUserInput(question) {
@@ -151,8 +106,8 @@ function getUserInput(question) {
 }
 
 // --- FUNGSI UTAMA OTOMASI PER AKUN ---
-async function runAutomation(accountIndex, generateEmail) {
-    const email = generateEmail();
+async function runAutomation(accountIndex) {
+    const email = generateRandomEmail();
     const fullName = generateRandomName();
     const birthdayData = generateRandomBirthday(); 
 
@@ -232,7 +187,7 @@ async function runAutomation(accountIndex, generateEmail) {
             
             // --- STEP 4: Input Kode Verifikasi & Continue ---
             const codeInputSelector = 'input[type="text"]'; 
-            console.log(`[STEP 4 Akun #${accountIndex}] Mengisi kode dan klik "Continue".`);
+            console.log('[STEP 4 Akun #${accountIndex}] Mengisi kode dan klik "Continue".');
             await page.waitForSelector(codeInputSelector, { timeout: 10000 }); 
             await page.type(codeInputSelector, verificationCode, { delay: 100 });
             await page.click('button[data-dd-action-name="Continue"]');
@@ -290,8 +245,8 @@ async function runAutomation(accountIndex, generateEmail) {
 // --- FUNGSI UTAMA: LOOP PARALEL (Sekarang Serial karena CONCURRENT_LIMIT = 1) ---
 
 (async () => {
-    if (!password) {
-        console.error("❌ ERROR FATAL: Pastikan variabel PASSWORD terisi di file .env");
+    if (!password || !domain || !apikey) {
+        console.error("❌ ERROR FATAL: Pastikan semua variabel (PASSWORD, DOMAIN, API_KEY) terisi di file .env");
         process.exit(1);
     }
     
@@ -304,34 +259,7 @@ async function runAutomation(accountIndex, generateEmail) {
     console.log(`╚═╝  ╚═╝ ╚═════╝╚══════╝      ╚═════╝ ╚══════╝  ╚═══╝  `);
     console.log(`=============================================================`);
     
-    // 2. Pilih mode email (1 = random, 2 = custom domain)
-    const emailModeInput = await getUserInput(`Pilih mode email (1 = random generator.email, 2 = custom domain): `);
-    const trimmedMode = emailModeInput.trim();
-    if (!['1', '2'].includes(trimmedMode)) {
-        console.error('❌ INPUT TIDAK VALID: Pilih "1" untuk random atau "2" untuk custom domain.');
-        process.exit(1);
-    }
-
-    const emailMode = trimmedMode === '2' ? 'custom' : 'random';
-    let customDomain = '';
-    let generatorDomains = [];
-
-    if (emailMode === 'custom') {
-        customDomain = (await getUserInput(`Masukkan custom domain (contoh: mydomain.com): `)).trim();
-
-        if (!customDomain || !customDomain.includes('.')) {
-            console.error('❌ INPUT TIDAK VALID: Domain harus mengandung titik, contoh: example.com');
-            process.exit(1);
-        }
-    } else {
-        generatorDomains = await fetchCapcutDomains();
-        if (generatorDomains.length === 0) {
-            console.error('❌ Tidak ada domain generator.email yang tersedia. Coba lagi nanti.');
-            process.exit(1);
-        }
-    }
-
-    // 3. Tanyakan jumlah akun yang ingin dibuat
+    // 2. Tanyakan jumlah akun yang ingin dibuat
     const maxAccountsStr = await getUserInput(`Masukkan jumlah akun yang ingin dibuat (Contoh: 5): `);
     const MAX_ACCOUNTS = parseInt(maxAccountsStr);
 
@@ -347,27 +275,14 @@ async function runAutomation(accountIndex, generateEmail) {
     console.log(`\n--- KONFIGURASI ---`);
     console.log(`Jumlah Akun: ${MAX_ACCOUNTS}`);
     console.log(`Konkurensi Paralel: ${CONCURRENT_LIMIT} (Serial)`);
-    console.log(`Mode Email: ${emailMode === 'custom' ? `Custom (${customDomain})` : 'Random (generator.email)'}`);
     console.log(`-------------------\n`);
-
-    const generateEmail = () => {
-        return emailMode === 'custom'
-            ? generateGeneratorCustomEmail(customDomain)
-            : generateGeneratorAutoEmail(generatorDomains);
-    };
-
-    const generateEmail = () => {
-        return emailMode === 'custom'
-            ? generateGeneratorCustomEmail(customDomain)
-            : generateGeneratorAutoEmail(generatorDomains);
-    };
 
     for (let i = 1; i <= MAX_ACCOUNTS; i++) {
         accountTasks.push(
             queue.add(async () => {
                 let success = false;
                 try {
-                    success = await runAutomation(i, generateEmail);
+                    success = await runAutomation(i); 
                 } catch (error) {
                     console.error(`[FATAL ERROR AKUN #${i}] Gagal saat eksekusi: ${error.message}`);
                 }
