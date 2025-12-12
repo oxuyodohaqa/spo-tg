@@ -435,8 +435,10 @@ async function runAutomation(accountIndex) {
             console.log(`[STEP 4 Akun #${accountIndex}] Mengisi kode dan klik "Continue".`);
 
             await page.waitForSelector(codeInputSelector, { timeout: 10000 });
-            await page.type(codeInputSelector, verificationCode, { delay: 100 });
+            const codeToType = String(verificationCode);
+            await page.type(codeInputSelector, codeToType, { delay: 100 });
 
+            await page.waitForSelector('button[data-dd-action-name="Continue"]', { timeout: 10000 });
             await page.click('button[data-dd-action-name="Continue"]');
             await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 }).catch(() => {});
             await delay(3000);
