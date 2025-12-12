@@ -22,13 +22,43 @@ const apikey = process.env.EMAIL_SERVICE_API_KEY;
 
 // --- FUNGSI UTILITY (Tidak Berubah) ---
 
-const generateRandomEmail = () => {
+const fetchCapcutDomains = async () => {
+    try {
+        const response = await axios.get('https://generator.email/');
+        const match = response.data.match(/class="e7m tt-suggestions".*?<\/div>/s);
+
+        if (!match) return [];
+
+        const domainMatches = [...match[0].matchAll(/<p[^>]*>([^<]+)<\/p>/g)].map((m) => m[1].trim());
+        return Array.from(new Set(domainMatches.filter((d) => d.includes('.'))));
+    } catch (error) {
+        console.error('❌ Gagal mengambil domain generator.email:', error.message);
+        return [];
+    }
+};
+
+const generateCleanUsername = () => {
     const letters = 'abcdefghijklmnopqrstuvwxyz';
+    const randomLength = Math.floor(Math.random() * 5) + 6; // 6-10 huruf
     let username = '';
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < randomLength; i++) {
         username += letters.charAt(Math.floor(Math.random() * letters.length));
     }
-    return `${username}@wzieemail.my.id`;
+    return username;
+};
+
+const generateGeneratorAutoEmail = (domains) => {
+    if (!domains || domains.length === 0) {
+        throw new Error('Domain generator.email tidak tersedia');
+    }
+    const user = generateCleanUsername();
+    const domain = domains[Math.floor(Math.random() * domains.length)];
+    return `${user}@${domain}`;
+};
+
+const generateGeneratorCustomEmail = (customDomain) => {
+    const user = generateCleanUsername();
+    return `${user}@${customDomain}`;
 };
 
 const generateRandomName = () => {
@@ -106,8 +136,8 @@ function getUserInput(question) {
 }
 
 // --- FUNGSI UTAMA OTOMASI PER AKUN ---
-async function runAutomation(accountIndex) {
-    const email = generateRandomEmail();
+async function runAutomation(accountIndex, generateEmail) {
+    const email = generateEmail();
     const fullName = generateRandomName();
     const birthdayData = generateRandomBirthday(); 
 
@@ -259,7 +289,28 @@ async function runAutomation(accountIndex) {
     console.log(`╚═╝  ╚═╝ ╚═════╝╚══════╝      ╚═════╝ ╚══════╝  ╚═══╝  `);
     console.log(`=============================================================`);
     
-    // 2. Tanyakan jumlah akun yang ingin dibuat
+    // 2. Pilih mode email
+    const emailModeInput = await getUserInput(`Pilih mode email [random/custom]: `);
+    const emailMode = emailModeInput.trim().toLowerCase() === 'custom' ? 'custom' : 'random';
+    let customDomain = '';
+    let generatorDomains = [];
+
+    if (emailMode === 'custom') {
+        customDomain = (await getUserInput(`Masukkan custom domain (contoh: mydomain.com): `)).trim();
+
+        if (!customDomain || !customDomain.includes('.')) {
+            console.error('❌ INPUT TIDAK VALID: Domain harus mengandung titik, contoh: example.com');
+            process.exit(1);
+        }
+    } else {
+        generatorDomains = await fetchCapcutDomains();
+        if (generatorDomains.length === 0) {
+            console.error('❌ Tidak ada domain generator.email yang tersedia. Coba lagi nanti.');
+            process.exit(1);
+        }
+    }
+
+    // 3. Tanyakan jumlah akun yang ingin dibuat
     const maxAccountsStr = await getUserInput(`Masukkan jumlah akun yang ingin dibuat (Contoh: 5): `);
     const MAX_ACCOUNTS = parseInt(maxAccountsStr);
 
@@ -275,14 +326,21 @@ async function runAutomation(accountIndex) {
     console.log(`\n--- KONFIGURASI ---`);
     console.log(`Jumlah Akun: ${MAX_ACCOUNTS}`);
     console.log(`Konkurensi Paralel: ${CONCURRENT_LIMIT} (Serial)`);
+    console.log(`Mode Email: ${emailMode === 'custom' ? `Custom (${customDomain})` : 'Random (generator.email)'}`);
     console.log(`-------------------\n`);
+
+    const generateEmail = () => {
+        return emailMode === 'custom'
+            ? generateGeneratorCustomEmail(customDomain)
+            : generateGeneratorAutoEmail(generatorDomains);
+    };
 
     for (let i = 1; i <= MAX_ACCOUNTS; i++) {
         accountTasks.push(
             queue.add(async () => {
                 let success = false;
                 try {
-                    success = await runAutomation(i); 
+                    success = await runAutomation(i, generateEmail);
                 } catch (error) {
                     console.error(`[FATAL ERROR AKUN #${i}] Gagal saat eksekusi: ${error.message}`);
                 }
