@@ -16,9 +16,7 @@ const headless = 'new'; // HEADLESS MODE BARU
 const CONCURRENT_LIMIT = 1; // Eksekusi Serial
 
 // Konfigurasi dari ENV
-const password = process.env.CHATGPT_PASSWORD; 
-const domain = process.env.EMAIL_SERVICE_DOMAIN; 
-const apikey = process.env.EMAIL_SERVICE_API_KEY; 
+const password = process.env.CHATGPT_PASSWORD;
 
 // --- FUNGSI UTILITY (Tidak Berubah) ---
 
@@ -83,43 +81,60 @@ const saveToAccountsFile = (email, password) => {
     console.log(`✅ Kredensial akun disimpan di accounts.txt`);
 };
 
-const fetchVerificationCode = async (userEmail) => {
-    const apiUrl = `${domain}/${userEmail}/${apikey}`;
+const extractVerificationCode = (html) => {
+    if (!html) return null;
 
-    const config = {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-            'Accept': 'application/json' 
-        },
-        timeout: 15000 
-    };
-    
-    try {
-        const response = await axios.get(apiUrl, config); 
-        
-        if (response.status === 200 && Array.isArray(response.data) && response.data.length > 0) {
-            
-            const latestEmail = response.data[0];
-            const emailSubject = latestEmail.subject;
-            const regex = /\d{6}/;
-            const match = emailSubject.match(regex);
+    const patterns = [
+        /<p[^>]*font-size:\s*24px[^>]*>[\s\n]*(\d{6})[\s\n]*<\/p>/i,
+        /Your ChatGPT code is (\d{6})/i,
+        /<title>.*?(\d{6}).*?<\/title>/i,
+        /verification code[:\s]*(\d{6})/i,
+        /code[:\s]*(\d{6})/i,
+        /\b(\d{6})\b/
+    ];
 
-            if (match && match.length > 0) {
-                const realCode = match[0]; 
-                return realCode;
-            } else {
-                return '999999'; 
-            }
-        } else {
-            return null; 
-        }
-        
-    } catch (error) {
-        if (error.response && error.response.status >= 400) {
-            return '111111'; 
-        }
+    for (const pattern of patterns) {
+        const match = html.match(pattern);
+        if (match) return match[1];
+    }
+
+    return null;
+};
+
+const fetchVerificationCode = async (userEmail, maxWaitMs = 120000) => {
+    const [localPart, emailDomain] = userEmail.split('@');
+
+    if (!localPart || !emailDomain) {
+        console.error('❌ Email tidak valid untuk mengambil kode verifikasi.');
         return null;
     }
+
+    const inboxUrl = `https://generator.email/${emailDomain}/${localPart}/`;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < maxWaitMs) {
+        try {
+            const response = await axios.get(inboxUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
+                },
+                timeout: 15000
+            });
+
+            const code = extractVerificationCode(response.data);
+            if (code) {
+                return code;
+            }
+        } catch (error) {
+            console.error(`⚠️ Retry ambil kode generator.email (status: ${error.response?.status || error.message})`);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+
+    console.error('❌ Timeout menunggu kode verifikasi dari generator.email');
+    return null;
 };
 
 function getUserInput(question) {
@@ -217,7 +232,7 @@ async function runAutomation(accountIndex, generateEmail) {
             
             // --- STEP 4: Input Kode Verifikasi & Continue ---
             const codeInputSelector = 'input[type="text"]'; 
-            console.log('[STEP 4 Akun #${accountIndex}] Mengisi kode dan klik "Continue".');
+            console.log(`[STEP 4 Akun #${accountIndex}] Mengisi kode dan klik "Continue".`);
             await page.waitForSelector(codeInputSelector, { timeout: 10000 }); 
             await page.type(codeInputSelector, verificationCode, { delay: 100 });
             await page.click('button[data-dd-action-name="Continue"]');
@@ -275,8 +290,8 @@ async function runAutomation(accountIndex, generateEmail) {
 // --- FUNGSI UTAMA: LOOP PARALEL (Sekarang Serial karena CONCURRENT_LIMIT = 1) ---
 
 (async () => {
-    if (!password || !domain || !apikey) {
-        console.error("❌ ERROR FATAL: Pastikan semua variabel (PASSWORD, DOMAIN, API_KEY) terisi di file .env");
+    if (!password) {
+        console.error("❌ ERROR FATAL: Pastikan variabel PASSWORD terisi di file .env");
         process.exit(1);
     }
     
@@ -334,6 +349,12 @@ async function runAutomation(accountIndex, generateEmail) {
     console.log(`Konkurensi Paralel: ${CONCURRENT_LIMIT} (Serial)`);
     console.log(`Mode Email: ${emailMode === 'custom' ? `Custom (${customDomain})` : 'Random (generator.email)'}`);
     console.log(`-------------------\n`);
+
+    const generateEmail = () => {
+        return emailMode === 'custom'
+            ? generateGeneratorCustomEmail(customDomain)
+            : generateGeneratorAutoEmail(generatorDomains);
+    };
 
     const generateEmail = () => {
         return emailMode === 'custom'
