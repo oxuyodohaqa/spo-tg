@@ -16,9 +16,14 @@ const headless = 'new'; // HEADLESS MODE BARU
 const CONCURRENT_LIMIT = 1; // Eksekusi Serial
 
 // Konfigurasi dari ENV
-const password = process.env.CHATGPT_PASSWORD; 
-const domain = process.env.EMAIL_SERVICE_DOMAIN; 
-const apikey = process.env.EMAIL_SERVICE_API_KEY; 
+const password = process.env.CHATGPT_PASSWORD;
+const domain = process.env.EMAIL_SERVICE_DOMAIN;
+const apikey = process.env.EMAIL_SERVICE_API_KEY;
+const emailMode = (process.env.EMAIL_MODE || 'api').toLowerCase();
+const customDomains = (process.env.GENERATOR_CUSTOM_DOMAINS || '')
+    .split(',')
+    .map(d => d.trim())
+    .filter(Boolean);
 
 // --- FUNGSI UTILITY (Tidak Berubah) ---
 
@@ -29,6 +34,18 @@ const generateRandomEmail = () => {
         username += letters.charAt(Math.floor(Math.random() * letters.length));
     }
     return `${username}@wzieemail.my.id`;
+};
+
+const generateCleanUsername = () => {
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const pool = letters + numbers;
+    let username = '';
+    const length = Math.floor(Math.random() * 6) + 6; // 6-11 chars
+    for (let i = 0; i < length; i++) {
+        username += pool.charAt(Math.floor(Math.random() * pool.length));
+    }
+    return username;
 };
 
 const generateRandomName = () => {
@@ -53,7 +70,7 @@ const saveToAccountsFile = (email, password) => {
     console.log(`✅ Kredensial akun disimpan di accounts.txt`);
 };
 
-const fetchVerificationCode = async (userEmail) => {
+const fetchVerificationCodeFromApi = async (userEmail) => {
     const apiUrl = `${domain}/${userEmail}/${apikey}`;
 
     const config = {
@@ -92,6 +109,106 @@ const fetchVerificationCode = async (userEmail) => {
     }
 };
 
+const fetchCapcutDomains = async () => {
+    try {
+        const response = await axios.get('https://generator.email/', { timeout: 15000 });
+        const html = response.data;
+        const match = html.match(/class="e7m tt-suggestions"([\s\S]*?)<\/div>/);
+        if (!match) return [];
+        const domainMatches = match[1].match(/<p[^>]*>([^<]+)<\/p>/g) || [];
+        const domains = domainMatches
+            .map(block => block.replace(/<[^>]+>/g, '').trim())
+            .filter(text => text.includes('.'));
+        return Array.from(new Set(domains));
+    } catch (error) {
+        console.error('⚠️ Gagal mengambil domain generator.email:', error.message);
+        return [];
+    }
+};
+
+const generateGeneratorAutoEmail = async () => {
+    const domains = await fetchCapcutDomains();
+    if (!domains.length) {
+        throw new Error('Tidak ada domain generator.email yang tersedia');
+    }
+    const user = generateCleanUsername();
+    const domainChoice = domains[Math.floor(Math.random() * domains.length)];
+    const emailAddr = `${user}@${domainChoice}`;
+    console.log(`🔮 Generator Auto Email: ${emailAddr}`);
+    return emailAddr;
+};
+
+const generateGeneratorCustomEmail = () => {
+    if (!customDomains.length) {
+        throw new Error('Mohon set GENERATOR_CUSTOM_DOMAINS untuk mode generator_custom');
+    }
+    const user = generateCleanUsername();
+    const domainChoice = customDomains[Math.floor(Math.random() * customDomains.length)];
+    const emailAddr = `${user}@${domainChoice}`;
+    console.log(`🎯 Generator Custom Email: ${emailAddr}`);
+    return emailAddr;
+};
+
+const extractOtpFromHtml = (html) => {
+    if (!html) return null;
+    const patterns = [
+        /<p[^>]*font-size:\s*24px[^>]*>[\s\n]*(\d{6})[\s\n]*<\/p>/i,
+        /Your ChatGPT code is (\d{6})/i,
+        /<title>.*?(\d{6}).*?<\/title>/i,
+        /verification code[:\s]*(\d{6})/i,
+        /code[:\s]*(\d{6})/i,
+        /(\b\d{6}\b)/,
+    ];
+
+    for (const pattern of patterns) {
+        const match = html.match(pattern);
+        if (match && match[1]) {
+            return match[1];
+        }
+    }
+    return null;
+};
+
+const fetchGeneratorOtp = async (emailAddress) => {
+    const [local, domainPart] = emailAddress.split('@');
+    const inboxUrl = `https://generator.email/${domainPart}/${local}/`;
+    console.log('⏳ Mengecek inbox generator.email...');
+    const start = Date.now();
+    while (Date.now() - start < 120000) {
+        try {
+            const response = await axios.get(inboxUrl, { timeout: 15000 });
+            const otp = extractOtpFromHtml(response.data);
+            if (otp) {
+                const seconds = ((Date.now() - start) / 1000).toFixed(1);
+                console.log(`🔑 OTP dari generator.email: ${otp} (${seconds}s)`);
+                return otp;
+            }
+        } catch (error) {
+            console.log('⚠️ Gagal mengambil inbox generator.email, mencoba lagi...');
+        }
+        await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    console.error('❌ Timeout membaca OTP dari generator.email');
+    return null;
+};
+
+const generateEmail = async () => {
+    if (emailMode === 'generator_auto') {
+        return generateGeneratorAutoEmail();
+    }
+    if (emailMode === 'generator_custom') {
+        return generateGeneratorCustomEmail();
+    }
+    return generateRandomEmail();
+};
+
+const fetchVerificationCode = async (userEmail) => {
+    if (emailMode === 'generator_auto' || emailMode === 'generator_custom') {
+        return fetchGeneratorOtp(userEmail);
+    }
+    return fetchVerificationCodeFromApi(userEmail);
+};
+
 function getUserInput(question) {
     const rl = readline.createInterface({
         input: process.stdin,
@@ -107,9 +224,9 @@ function getUserInput(question) {
 
 // --- FUNGSI UTAMA OTOMASI PER AKUN ---
 async function runAutomation(accountIndex) {
-    const email = generateRandomEmail();
+    const email = await generateEmail();
     const fullName = generateRandomName();
-    const birthdayData = generateRandomBirthday(); 
+    const birthdayData = generateRandomBirthday();
 
     let browser;
     let page;
@@ -245,8 +362,18 @@ async function runAutomation(accountIndex) {
 // --- FUNGSI UTAMA: LOOP PARALEL (Sekarang Serial karena CONCURRENT_LIMIT = 1) ---
 
 (async () => {
-    if (!password || !domain || !apikey) {
-        console.error("❌ ERROR FATAL: Pastikan semua variabel (PASSWORD, DOMAIN, API_KEY) terisi di file .env");
+    if (!password) {
+        console.error("❌ ERROR FATAL: Pastikan variabel CHATGPT_PASSWORD terisi di file .env");
+        process.exit(1);
+    }
+
+    if (emailMode === 'api' && (!domain || !apikey)) {
+        console.error("❌ ERROR FATAL: Pastikan EMAIL_SERVICE_DOMAIN dan EMAIL_SERVICE_API_KEY terisi untuk mode API");
+        process.exit(1);
+    }
+
+    if (emailMode === 'generator_custom' && !customDomains.length) {
+        console.error("❌ ERROR FATAL: Setidaknya satu domain harus diisi di GENERATOR_CUSTOM_DOMAINS untuk mode generator_custom");
         process.exit(1);
     }
     
@@ -275,6 +402,7 @@ async function runAutomation(accountIndex) {
     console.log(`\n--- KONFIGURASI ---`);
     console.log(`Jumlah Akun: ${MAX_ACCOUNTS}`);
     console.log(`Konkurensi Paralel: ${CONCURRENT_LIMIT} (Serial)`);
+    console.log(`Mode Email: ${emailMode}`);
     console.log(`-------------------\n`);
 
     for (let i = 1; i <= MAX_ACCOUNTS; i++) {
