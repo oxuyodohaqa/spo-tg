@@ -289,9 +289,15 @@ async function runAutomation(accountIndex, generateEmail) {
     console.log(`╚═╝  ╚═╝ ╚═════╝╚══════╝      ╚═════╝ ╚══════╝  ╚═══╝  `);
     console.log(`=============================================================`);
     
-    // 2. Pilih mode email
-    const emailModeInput = await getUserInput(`Pilih mode email [random/custom]: `);
-    const emailMode = emailModeInput.trim().toLowerCase() === 'custom' ? 'custom' : 'random';
+    // 2. Pilih mode email (1 = random, 2 = custom domain)
+    const emailModeInput = await getUserInput(`Pilih mode email (1 = random generator.email, 2 = custom domain): `);
+    const trimmedMode = emailModeInput.trim();
+    if (!['1', '2'].includes(trimmedMode)) {
+        console.error('❌ INPUT TIDAK VALID: Pilih "1" untuk random atau "2" untuk custom domain.');
+        process.exit(1);
+    }
+
+    const emailMode = trimmedMode === '2' ? 'custom' : 'random';
     let customDomain = '';
     let generatorDomains = [];
 
