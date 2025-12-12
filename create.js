@@ -431,17 +431,10 @@ async function runAutomation(accountIndex) {
             console.log(`[STEP 3 Akun #${accountIndex}] ✅ Kode didapatkan: ${verificationCode}`);
 
             // --- STEP 4: Input Kode Verifikasi & Continue ---
-            console.log(`[STEP 4 Akun #${accountIndex}] Mengisi kode dan klik "Continue".`);
             const codeInputSelector = 'input[type="text"]';
+            console.log(`[STEP 4 Akun #${accountIndex}] Mengisi kode dan klik "Continue".`);
 
-            try {
-                await page.waitForSelector(codeInputSelector, { timeout: 10000 });
-            } catch (error) {
-                await captureDebugArtifacts(page, accountIndex, 'otp-missing');
-                throw error;
-            }
-
-            await page.click(codeInputSelector, { clickCount: 3 });
+            await page.waitForSelector(codeInputSelector, { timeout: 10000 });
             await page.type(codeInputSelector, verificationCode, { delay: 100 });
 
             await page.click('button[data-dd-action-name="Continue"]');
